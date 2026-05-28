@@ -14,17 +14,17 @@ This implementation plan covers building an intelligent CI/CD diagnostics demo u
 
 ### Phase 2: Custom MCP Servers
 
-- [ ] 2.1 Implement CodeCommit MCP Server entry point (`mcp-servers/codecommit/server.py`) with MCP SDK server initialization and tool registration
+- [x] 2.1 Implement CodeCommit MCP Server entry point (`mcp-servers/codecommit/server.py`) with MCP SDK server initialization and tool registration
   - _Requirements: 1.1, 1.2, 1.3, 1.6_
-- [ ] 2.2 Implement CodeCommit MCP Server handlers (`mcp-servers/codecommit/handlers.py`) with `list_files`, `get_file_content`, and `get_repository_metadata` using boto3
+- [x] 2.2 Implement CodeCommit MCP Server handlers (`mcp-servers/codecommit/handlers.py`) with `list_files`, `get_file_content`, and `get_repository_metadata` using boto3
   - _Requirements: 1.1, 1.2, 1.3_
-- [ ] 2.3 Add error handling to CodeCommit MCP Server for non-existent repositories and file paths (return descriptive MCP error responses)
+- [x] 2.3 Add error handling to CodeCommit MCP Server for non-existent repositories and file paths (return descriptive MCP error responses)
   - _Requirements: 1.4, 1.5_
-- [ ] 2.4 Implement CodePipeline MCP Server entry point (`mcp-servers/codepipeline/server.py`) with MCP SDK server initialization and tool registration
+- [x] 2.4 Implement CodePipeline MCP Server entry point (`mcp-servers/codepipeline/server.py`) with MCP SDK server initialization and tool registration
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.6_
-- [ ] 2.5 Implement CodePipeline MCP Server handlers (`mcp-servers/codepipeline/handlers.py`) with `get_pipeline_state`, `get_pipeline_execution`, `get_action_execution_details`, and `list_pipeline_executions` using boto3
+- [x] 2.5 Implement CodePipeline MCP Server handlers (`mcp-servers/codepipeline/handlers.py`) with `get_pipeline_state`, `get_pipeline_execution`, `get_action_execution_details`, and `list_pipeline_executions` using boto3
   - _Requirements: 2.1, 2.2, 2.3, 2.4_
-- [ ] 2.6 Add error handling to CodePipeline MCP Server for non-existent pipelines (return descriptive MCP error responses)
+- [x] 2.6 Add error handling to CodePipeline MCP Server for non-existent pipelines (return descriptive MCP error responses)
   - _Requirements: 2.5_
 - [ ]* 2.7 Write unit tests for CodeCommit MCP Server handlers using mocked boto3 responses
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
