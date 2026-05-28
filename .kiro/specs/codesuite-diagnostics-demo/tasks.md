@@ -69,21 +69,21 @@ This implementation plan covers building an intelligent CI/CD diagnostics demo u
 
 ### Phase 5: Demo UI
 
-- [ ] 5.1 Initialize React + TypeScript project with Vite, Tailwind CSS, and project structure (`demo-ui/`)
+- [x] 5.1 Initialize React + TypeScript project with Vite, Tailwind CSS, and project structure (`demo-ui/`)
   - _Requirements: 7.6_
-- [ ] 5.2 Implement Layout component with AWS console-style navigation (dark sidebar, header with service name)
+- [x] 5.2 Implement Layout component with AWS console-style navigation (dark sidebar, header with service name)
   - _Requirements: 7.6_
-- [ ] 5.3 Implement PipelineList component displaying pipeline names and execution statuses with color-coded indicators
+- [x] 5.3 Implement PipelineList component displaying pipeline names and execution statuses with color-coded indicators
   - _Requirements: 7.1_
-- [ ] 5.4 Implement PipelineDetail component with stage visualization (Source → Build/Deploy flow diagram) and execution history
+- [x] 5.4 Implement PipelineDetail component with stage visualization (Source → Build/Deploy flow diagram) and execution history
   - _Requirements: 7.2_
-- [ ] 5.5 Implement AnalysisPanel component with structured diagnosis display (category badge, description, affected resource, recommended fix with code blocks)
+- [x] 5.5 Implement AnalysisPanel component with structured diagnosis display (category badge, description, affected resource, recommended fix with code blocks)
   - _Requirements: 7.3, 7.4_
-- [ ] 5.6 Implement API client (`demo-ui/src/api/client.ts`) for backend communication
+- [x] 5.6 Implement API client (`demo-ui/src/api/client.ts`) for backend communication
   - _Requirements: 7.1, 7.2, 7.3_
-- [ ] 5.7 Add loading state to AnalysisPanel with animated progress indicators showing MCP tool invocations
+- [x] 5.7 Add loading state to AnalysisPanel with animated progress indicators showing MCP tool invocations
   - _Requirements: 7.5_
-- [ ] 5.8 Apply AWS console styling: color scheme (#232f3e nav, #ff9900 accents), typography (Amazon Ember font or fallback), spacing patterns
+- [x] 5.8 Apply AWS console styling: color scheme (#232f3e nav, #ff9900 accents), typography (Amazon Ember font or fallback), spacing patterns
   - _Requirements: 7.6_
 
 ### Phase 6: Integration and Demo Polish
@@ -94,14 +94,14 @@ This implementation plan covers building an intelligent CI/CD diagnostics demo u
   - _Requirements: 5.2, 5.3, 5.4, 5.5_
 - [ ]* 6.3 End-to-end integration test: trigger Scenario 3 diagnosis from UI and verify correct Analysis Panel output
   - _Requirements: 6.2, 6.3, 6.4, 6.5_
-- [ ] 6.4 Create demo run script that starts all services (MCP servers, backend, frontend) with a single command
+- [x] 6.4 Create demo run script that starts all services (MCP servers, backend, frontend) with a single command
   - _Requirements: 8.1_
-- [ ] 6.5 Write README.md with setup instructions, prerequisites (AWS account, credentials, CDK bootstrap), and demo walkthrough guide
+- [x] 6.5 Write README.md with setup instructions, prerequisites (AWS account, credentials, CDK bootstrap), and demo walkthrough guide
   - _Requirements: 8.1, 8.6_
-- [ ] 6.6 Create presentation talking points document mapping each scenario to the 2-pager root cause categories
+- [x] 6.6 Create presentation talking points document mapping each scenario to the 2-pager root cause categories
   - _Requirements: 4.4, 5.5, 6.5_
 
-- [ ] 7. Final checkpoint
+- [x] 7. Final checkpoint
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

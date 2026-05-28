@@ -1,0 +1,27 @@
+@import './styles/aws-console.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-size: 14px;
+  }
+
+  body {
+    font-family: 'Amazon Ember', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  /* Ensure consistent focus styles across the app */
+  :focus-visible {
+    outline: 2px solid #0073bb;
+    outline-offset: 2px;
+  }
+}
