@@ -50,19 +50,19 @@ This implementation plan covers building an intelligent CI/CD diagnostics demo u
 
 ### Phase 4: Bedrock Agent Backend
 
-- [ ] 4.1 Set up FastAPI application (`backend/app.py`) with CORS, health check, and API route structure
+- [x] 4.1 Set up FastAPI application (`backend/app.py`) with CORS, health check, and API route structure
   - _Requirements: 3.1, 7.1_
-- [ ] 4.2 Implement MCP client module (`backend/mcp_client.py`) that spawns MCP server subprocesses and communicates via stdio JSON-RPC
+- [x] 4.2 Implement MCP client module (`backend/mcp_client.py`) that spawns MCP server subprocesses and communicates via stdio JSON-RPC
   - _Requirements: 3.1, 9.1, 9.2_
-- [ ] 4.3 Implement Pydantic models (`backend/models.py`) for diagnosis output (root_cause_category, root_cause_description, affected_resource, recommended_fix, evidence)
+- [x] 4.3 Implement Pydantic models (`backend/models.py`) for diagnosis output (root_cause_category, root_cause_description, affected_resource, recommended_fix, evidence)
   - _Requirements: 3.5_
-- [ ] 4.4 Implement agent orchestration (`backend/agent.py`) using Bedrock Converse API with tool_use, system prompt, and MCP tool schema registration
+- [x] 4.4 Implement agent orchestration (`backend/agent.py`) using Bedrock Converse API with tool_use, system prompt, and MCP tool schema registration
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
-- [ ] 4.5 Create system prompt (`backend/prompts.py`) that instructs the agent on diagnostic methodology: retrieve state → read errors → investigate → diagnose
+- [x] 4.5 Create system prompt (`backend/prompts.py`) that instructs the agent on diagnostic methodology: retrieve state → read errors → investigate → diagnose
   - _Requirements: 3.1, 3.2, 3.3, 3.4_
-- [ ] 4.6 Implement API endpoints: GET `/api/pipelines`, GET `/api/pipelines/{name}`, GET `/api/pipelines/{name}/executions/{id}`, POST `/api/pipelines/{name}/executions/{id}/diagnose`
+- [x] 4.6 Implement API endpoints: GET `/api/pipelines`, GET `/api/pipelines/{name}`, GET `/api/pipelines/{name}/executions/{id}`, POST `/api/pipelines/{name}/executions/{id}/diagnose`
   - _Requirements: 7.1, 7.2, 7.3_
-- [ ] 4.7 Integrate AWS Labs IAM MCP Server and CloudWatch MCP Server as additional tool providers in the agent configuration
+- [x] 4.7 Integrate AWS Labs IAM MCP Server and CloudWatch MCP Server as additional tool providers in the agent configuration
   - _Requirements: 9.1, 9.2, 9.3, 9.4_
 - [ ]* 4.8 Test agent orchestration end-to-end against each seeded failure scenario
   - _Requirements: 4.2, 4.3, 4.4, 5.2, 5.3, 5.4, 5.5, 6.2, 6.3, 6.4, 6.5_
