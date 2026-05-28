@@ -1,0 +1,30 @@
+[project]
+name = "codesuite-diagnostics-demo"
+version = "0.1.0"
+description = "Intelligent CI/CD diagnostics demo using MCP servers and Amazon Bedrock"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0.0",
+    "boto3>=1.34.0",
+    "pydantic>=2.5.0",
+]
+
+[project.optional-dependencies]
+backend = [
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "moto>=5.0.0",
+    "ruff>=0.2.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
