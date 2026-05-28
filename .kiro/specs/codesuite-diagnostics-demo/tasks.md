@@ -33,19 +33,19 @@ This implementation plan covers building an intelligent CI/CD diagnostics demo u
 
 ### Phase 3: Seeded Failure Infrastructure
 
-- [ ] 3.1 Implement Scenario 1 CDK stack: CodeCommit repo (no appspec.yml), CodeDeploy app/deployment group, CodePipeline (Source → Deploy)
+- [x] 3.1 Implement Scenario 1 CDK stack: CodeCommit repo (no appspec.yml), CodeDeploy app/deployment group, CodePipeline (Source → Deploy)
   - _Requirements: 4.1, 8.1, 8.2_
-- [ ] 3.2 Create seed data for Scenario 1: sample application files (index.html, scripts/) without appspec.yml
+- [x] 3.2 Create seed data for Scenario 1: sample application files (index.html, scripts/) without appspec.yml
   - _Requirements: 4.1, 8.2_
-- [ ] 3.3 Implement Scenario 2 CDK stack: CodeCommit repo (valid code), IAM role missing `codecommit:GitPull`, CodePipeline (Source → Build)
+- [x] 3.3 Implement Scenario 2 CDK stack: CodeCommit repo (valid code), IAM role missing `codecommit:GitPull`, CodePipeline (Source → Build)
   - _Requirements: 5.1, 8.1, 8.3_
-- [ ] 3.4 Create seed data for Scenario 2: valid application files with appspec.yml
+- [x] 3.4 Create seed data for Scenario 2: valid application files with appspec.yml
   - _Requirements: 5.1, 8.3_
-- [ ] 3.5 Implement Scenario 3 CDK stack: CodeCommit repo with accounts-config.yaml (invalid OU name), CodeBuild validation project, CodePipeline (Source → Build)
+- [x] 3.5 Implement Scenario 3 CDK stack: CodeCommit repo with accounts-config.yaml (invalid OU name), CodeBuild validation project, CodePipeline (Source → Build)
   - _Requirements: 6.1, 8.1, 8.4_
-- [ ] 3.6 Create seed data for Scenario 3: accounts-config.yaml referencing non-existent OU "Workloads-Production" (actual OU is "Workloads-Prod")
+- [x] 3.6 Create seed data for Scenario 3: accounts-config.yaml referencing non-existent OU "Workloads-Production" (actual OU is "Workloads-Prod")
   - _Requirements: 6.1, 6.3, 8.4_
-- [ ] 3.7 Create CodeBuild buildspec for Scenario 3 that validates OU names against AWS Organizations and fails with descriptive error
+- [x] 3.7 Create CodeBuild buildspec for Scenario 3 that validates OU names against AWS Organizations and fails with descriptive error
   - _Requirements: 6.1, 8.5_
 
 ### Phase 4: Bedrock Agent Backend
