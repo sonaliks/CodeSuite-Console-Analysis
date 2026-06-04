@@ -1,6 +1,6 @@
 # CodeSuite Diagnostics Demo
 
-An intelligent "Analysis" section for the AWS CodeSuite console that uses MCP (Model Context Protocol) servers and Amazon Bedrock (Claude 3.5 Sonnet) to automatically diagnose CI/CD pipeline failures and provide actionable recommendations.
+An intelligent "Analysis" section for the AWS CodeSuite console that uses MCP (Model Context Protocol) servers and Amazon Bedrock to automatically diagnose CI/CD pipeline failures and provide actionable recommendations.
 
 This demo showcases three failure scenarios — configuration issues, permission issues, and infrastructure issues — with a React-based UI mimicking the AWS console experience.
 
@@ -15,7 +15,7 @@ This demo showcases three failure scenarios — configuration issues, permission
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                  Backend API (Python FastAPI)                     │
-│            Amazon Bedrock Agent (Claude 3.5 Sonnet)              │
+│            Amazon Bedrock Agent (Claude Haiku 4.5)               │
 └──────┬──────────────┬──────────────┬──────────────┬─────────────┘
        │              │              │              │
        ▼              ▼              ▼              ▼
@@ -37,338 +37,310 @@ This demo showcases three failure scenarios — configuration issues, permission
 ├── backend/               # FastAPI backend with Bedrock Agent orchestration
 ├── demo-ui/               # React + TypeScript frontend (Vite, Tailwind CSS)
 ├── infrastructure/        # AWS CDK stacks for seeded failure scenarios
-├── run-demo.sh            # Single command to start all services
+├── tests/                 # Unit tests and E2E integration tests
+├── docs/                  # Demo talking points
 └── README.md
 ```
 
 ## Prerequisites
 
-Before setting up the demo, ensure you have the following:
-
 ### Required Software
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Python | 3.11+ | MCP servers, backend, CDK |
-| Node.js | 18+ | Frontend dev server |
+| Python | 3.11+ | MCP servers, backend, CDK (macOS system Python 3.9 will NOT work) |
+| Node.js | 22+ | Frontend dev server (Vite requires 20.19+ or 22+) |
 | npm | 9+ | Frontend package management |
 | AWS CLI | 2.x | AWS credential management |
-| AWS CDK CLI | 2.120+ | Infrastructure deployment |
+| AWS CDK CLI | 2.1100+ | Infrastructure deployment |
 
-Install the AWS CDK CLI globally:
+### Install dependencies
 
 ```bash
+# Install CDK CLI
 npm install -g aws-cdk
+
+# If using nvm for Node.js
+nvm install 22
+nvm use 22
+
+# If Python 3.11 is not your default, install via Homebrew (macOS)
+brew install python@3.11
 ```
 
 ### AWS Account Setup
 
-1. **AWS Account**: You need an AWS account with permissions to create CodeCommit, CodePipeline, CodeBuild, CodeDeploy, IAM, S3, and CloudWatch resources.
-
-2. **AWS Credentials**: Configure credentials with sufficient permissions:
+1. **AWS Credentials**: Configure credentials with permissions for CodeCommit, CodePipeline, CodeBuild, CodeDeploy, IAM, S3, CloudWatch, EC2, and Bedrock:
    ```bash
    aws configure
    ```
-   Or set environment variables:
-   ```bash
-   export AWS_ACCESS_KEY_ID=<your-access-key>
-   export AWS_SECRET_ACCESS_KEY=<your-secret-key>
-   export AWS_DEFAULT_REGION=us-east-1
-   ```
 
-3. **Amazon Bedrock Access**: Ensure your account has access to Claude 3.5 Sonnet (`anthropic.claude-3-5-sonnet-20241022-v2:0`) in the `us-east-1` region. Request model access via the [Bedrock console](https://console.aws.amazon.com/bedrock/) if needed.
+2. **Amazon Bedrock Access**: Enable model access in the [Bedrock console](https://console.aws.amazon.com/bedrock/) under Model Access. The demo uses **Claude Haiku 4.5** via the inference profile `us.anthropic.claude-haiku-4-5-20251001-v1:0`. You can change this by setting the `BEDROCK_MODEL_ID` environment variable.
 
-4. **CDK Bootstrap**: Bootstrap CDK in your target account and region (one-time setup):
+3. **CDK Bootstrap** (one-time per account/region):
    ```bash
-   cdk bootstrap aws://<ACCOUNT_ID>/us-east-1
+   cdk bootstrap aws://<YOUR_ACCOUNT_ID>/us-east-1
    ```
 
 ## Setup Instructions
 
-### 1. Clone and Install Python Dependencies
+### 1. Clone the Repository
 
 ```bash
-# From the project root
-pip install -r requirements.txt
+git clone https://github.com/sonaliks/CodeSuite-Console-Analysis.git
+cd CodeSuite-Console-Analysis
 ```
 
-### 2. Set Up MCP Servers
+### 2. Install Python Dependencies
 
 ```bash
-# CodeCommit MCP Server
-cd mcp-servers/codecommit
-pip install -r requirements.txt
-
-# CodePipeline MCP Server
-cd ../codepipeline
-pip install -r requirements.txt
+# Use Python 3.11+ (not system Python 3.9)
+python3.11 -m pip install mcp boto3 fastapi uvicorn pydantic
 ```
 
-### 3. Set Up Backend
-
-```bash
-cd backend
-pip install -r requirements.txt
-```
-
-### 4. Set Up Frontend
+### 3. Install Frontend Dependencies
 
 ```bash
 cd demo-ui
 npm install
+cd ..
 ```
 
-### 5. Set Up Infrastructure
+### 4. Configure CDK for Your Account
+
+Edit `infrastructure/app.py` and update the account ID:
+
+```python
+env = cdk.Environment(
+    account="<YOUR_AWS_ACCOUNT_ID>",  # Replace with your account ID
+    region="us-east-1",
+)
+```
+
+### 5. Deploy Infrastructure
 
 ```bash
 cd infrastructure
+python3.11 -m pip install -r requirements.txt
+python3.11 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-## Deploying the Seeded Infrastructure
-
-The infrastructure uses AWS CDK to deploy three failure scenarios as separate stacks:
-
-```bash
-cd infrastructure
-
-# Preview what will be deployed
+# Synthesize to verify templates
 cdk synth
 
-# Deploy all stacks (shared resources + 3 scenarios)
-cdk deploy --all
+# Deploy all stacks
+cdk deploy --all --require-approval never
 ```
 
 This creates:
-- **Shared Stack**: S3 artifact bucket used by all pipelines
-- **Scenario 1 Stack**: CodePipeline with CodeDeploy that fails due to missing `appspec.yml`
-- **Scenario 2 Stack**: CodePipeline with IAM role missing `codecommit:GitPull` permission
-- **Scenario 3 Stack**: CodePipeline with LZA validation that fails due to OU name mismatch
+- **Shared Stack**: S3 artifact bucket
+- **Scenario 1**: CodePipeline + CodeDeploy + EC2 instance (fails due to missing `appspec.yml`)
+- **Scenario 2**: CodePipeline with restricted IAM role (fails due to missing `codecommit:GitPull`)
+- **Scenario 3**: CodePipeline + CodeBuild LZA validator (fails due to OU name mismatch)
 
-After deployment, the pipelines will automatically trigger and fail predictably within one execution cycle.
+### 6. Push Seed Data to CodeCommit Repositories
+
+After CDK deploy, the repos are empty. Push the seed data so the pipelines trigger and fail correctly:
+
+```bash
+# Scenario 1: App without appspec.yml
+aws codecommit put-file \
+  --repository-name codesuite-diag-scenario1-app \
+  --branch-name main \
+  --file-content fileb://infrastructure/seed_data/scenario1/index.html \
+  --file-path index.html \
+  --commit-message "Initial commit" --name "Demo" --email "demo@example.com"
+
+COMMIT_ID=$(aws codecommit get-branch --repository-name codesuite-diag-scenario1-app --branch-name main --query 'branch.commitId' --output text)
+aws codecommit put-file \
+  --repository-name codesuite-diag-scenario1-app \
+  --branch-name main \
+  --file-content fileb://infrastructure/seed_data/scenario1/scripts/app.js \
+  --file-path scripts/app.js \
+  --parent-commit-id "$COMMIT_ID" \
+  --commit-message "Add scripts" --name "Demo" --email "demo@example.com"
+
+# Scenario 2: Valid app (pipeline fails on IAM permission)
+aws codecommit put-file \
+  --repository-name codesuite-diag-scenario2-app \
+  --branch-name main \
+  --file-content fileb://infrastructure/seed_data/scenario2/index.html \
+  --file-path index.html \
+  --commit-message "Initial commit" --name "Demo" --email "demo@example.com"
+
+COMMIT_ID=$(aws codecommit get-branch --repository-name codesuite-diag-scenario2-app --branch-name main --query 'branch.commitId' --output text)
+aws codecommit put-file \
+  --repository-name codesuite-diag-scenario2-app \
+  --branch-name main \
+  --file-content fileb://infrastructure/seed_data/scenario2/appspec.yml \
+  --file-path appspec.yml \
+  --parent-commit-id "$COMMIT_ID" \
+  --commit-message "Add appspec" --name "Demo" --email "demo@example.com"
+
+COMMIT_ID=$(aws codecommit get-branch --repository-name codesuite-diag-scenario2-app --branch-name main --query 'branch.commitId' --output text)
+aws codecommit put-file \
+  --repository-name codesuite-diag-scenario2-app \
+  --branch-name main \
+  --file-content fileb://infrastructure/seed_data/scenario2/buildspec.yml \
+  --file-path buildspec.yml \
+  --parent-commit-id "$COMMIT_ID" \
+  --commit-message "Add buildspec" --name "Demo" --email "demo@example.com"
+
+# Scenario 3: LZA config with invalid OU
+aws codecommit put-file \
+  --repository-name codesuite-diag-scenario3-lza-config \
+  --branch-name main \
+  --file-content fileb://infrastructure/seed_data/scenario3/accounts-config.yaml \
+  --file-path accounts-config.yaml \
+  --commit-message "Initial commit" --name "Demo" --email "demo@example.com"
+
+COMMIT_ID=$(aws codecommit get-branch --repository-name codesuite-diag-scenario3-lza-config --branch-name main --query 'branch.commitId' --output text)
+aws codecommit put-file \
+  --repository-name codesuite-diag-scenario3-lza-config \
+  --branch-name main \
+  --file-content fileb://infrastructure/seed_data/scenario3/buildspec.yml \
+  --file-path buildspec.yml \
+  --parent-commit-id "$COMMIT_ID" \
+  --commit-message "Add buildspec" --name "Demo" --email "demo@example.com"
+
+COMMIT_ID=$(aws codecommit get-branch --repository-name codesuite-diag-scenario3-lza-config --branch-name main --query 'branch.commitId' --output text)
+aws codecommit put-file \
+  --repository-name codesuite-diag-scenario3-lza-config \
+  --branch-name main \
+  --file-content fileb://infrastructure/seed_data/scenario3/validate_ou_names.py \
+  --file-path validate_ou_names.py \
+  --parent-commit-id "$COMMIT_ID" \
+  --commit-message "Add validation script" --name "Demo" --email "demo@example.com"
+```
+
+Wait 1-2 minutes for the pipelines to trigger and fail, then verify:
+
+```bash
+aws codepipeline get-pipeline-state --name codesuite-diag-scenario1-pipeline \
+  --query "stageStates[*].{stage:stageName,status:latestExecution.status}" --output table
+
+aws codepipeline get-pipeline-state --name codesuite-diag-scenario3-pipeline \
+  --query "stageStates[*].{stage:stageName,status:latestExecution.status}" --output table
+```
+
+Expected: Source Succeeded, Deploy/Build Failed.
 
 ## Running the Demo
 
-### Quick Start (All Services)
-
-Use the provided script to start all services with a single command:
+### Start Services
 
 ```bash
-./run-demo.sh
-```
-
-This starts:
-1. CodeCommit MCP Server
-2. CodePipeline MCP Server
-3. Backend API Server (uvicorn on port 8000)
-4. Frontend Dev Server (Vite on port 5173)
-
-Access the demo at: **http://localhost:5173**
-
-Press `Ctrl+C` to stop all services.
-
-### Manual Start (Individual Services)
-
-If you prefer to start services individually:
-
-```bash
-# Terminal 1: Backend API
+# Terminal 1: Start the backend (use Python 3.11+)
 cd backend
-python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+python3.11 -m uvicorn app:app --host 0.0.0.0 --port 8000
 
-# Terminal 2: Frontend
+# Terminal 2: Start the frontend
 cd demo-ui
 npm run dev
 ```
 
-The MCP servers are spawned as subprocesses by the backend and do not need to be started separately in manual mode.
+Access the demo at: **http://localhost:5173**
 
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BEDROCK_MODEL_ID` | `anthropic.claude-3-5-sonnet-20241022-v2:0` | Bedrock model to use |
+| `BEDROCK_MODEL_ID` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Bedrock inference profile ID |
 | `BEDROCK_REGION` | `us-east-1` | AWS region for Bedrock API calls |
-| `BACKEND_HOST` | `0.0.0.0` | Backend server bind address |
-| `BACKEND_PORT` | `8000` | Backend server port |
+| `API_HOST` | `0.0.0.0` | Backend server bind address |
+| `API_PORT` | `8000` | Backend server port |
+
+### Changing the Bedrock Model
+
+To use a different Claude model, set the environment variable before starting the backend:
+
+```bash
+export BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-20250514-v1:0
+```
+
+Check available inference profiles in your account:
+```bash
+aws bedrock list-inference-profiles --query "inferenceProfileSummaries[?contains(inferenceProfileId,'claude')].{id:inferenceProfileId,status:status}" --output table
+```
 
 ## Demo Walkthrough
 
-### Overview
+### How It Works
 
-The demo presents three pre-configured pipeline failures. For each scenario, the Bedrock Agent uses MCP tools to investigate the failure, identify the root cause, and provide a recommended fix — all displayed in the Analysis Panel.
-
----
+1. Open http://localhost:5173
+2. The pipeline list shows all pipelines in your account that have a failed latest execution
+3. Click a failed pipeline to see its stage visualization and execution history
+4. Click **"Analyze"** on a failed execution
+5. The Bedrock Agent investigates using MCP tools (takes 30-60 seconds)
+6. The Analysis Panel displays: root cause category, description, affected resource, and recommended fix
 
 ### Scenario 1: Missing appspec.yml (Configuration Issue)
 
-**What happens:** A CodePipeline with a CodeDeploy action fails because the CodeCommit repository is missing the required `appspec.yml` file.
-
-**Demo steps:**
-1. Open the demo UI at http://localhost:5173
-2. Select the Scenario 1 pipeline from the pipeline list
-3. Click on the failed execution
-4. Click "Analyze" to trigger the Bedrock Agent diagnosis
-
-**What the agent does:**
-1. Retrieves the pipeline state and identifies the failed Deploy stage
-2. Gets the action execution error details from CodeDeploy
-3. Inspects the CodeCommit repository file listing using the CodeCommit MCP Server
-4. Confirms `appspec.yml` is absent from the repository root
-
-**Expected diagnosis:**
-- **Category:** Configuration Issue
-- **Root Cause:** Missing `appspec.yml` file in the repository root
-- **Recommendation:** Add an `appspec.yml` file with the correct deployment configuration
-
----
+- Pipeline: `codesuite-diag-scenario1-pipeline`
+- Failure: Deploy stage fails because `appspec.yml` is missing from the CodeCommit repo
+- Agent investigates: gets pipeline state → reads error → lists repo files → confirms appspec is absent
 
 ### Scenario 2: Missing IAM Permission (Permission Issue)
 
-**What happens:** A CodePipeline fails at the Source stage because the pipeline's IAM service role is missing the `codecommit:GitPull` permission.
-
-**Demo steps:**
-1. Select the Scenario 2 pipeline from the pipeline list
-2. Click on the failed execution
-3. Click "Analyze" to trigger diagnosis
-
-**What the agent does:**
-1. Retrieves the pipeline state and identifies the failed Source stage
-2. Reads the AccessDenied error from the action execution details
-3. Identifies the IAM role attached to the pipeline
-4. Inspects the role's policies using the IAM MCP Server
-5. Determines that `codecommit:GitPull` is not granted
-
-**Expected diagnosis:**
-- **Category:** Permission Issue
-- **Root Cause:** Pipeline service role missing `codecommit:GitPull` permission
-- **Recommendation:** Add an IAM policy statement granting `codecommit:GitPull` to the role
-
----
+- Pipeline: `codesuite-diag-scenario2-pipeline`
+- Failure: Source stage fails due to AccessDenied (missing `codecommit:GitPull`)
+- Agent investigates: gets pipeline state → reads error → inspects IAM role policies → identifies missing permission
 
 ### Scenario 3: LZA Config OU Mismatch (Infrastructure Issue)
 
-**What happens:** An LZA-style pipeline fails at the Build stage because `accounts-config.yaml` references an organizational unit name ("Workloads-Production") that doesn't exist — the actual OU is "Workloads-Prod".
-
-**Demo steps:**
-1. Select the Scenario 3 pipeline from the pipeline list
-2. Click on the failed execution
-3. Click "Analyze" to trigger diagnosis
-
-**What the agent does:**
-1. Retrieves the pipeline state and identifies the failed Build stage
-2. Checks CloudWatch logs for the CodeBuild validation error
-3. Retrieves `accounts-config.yaml` from the CodeCommit repository
-4. Identifies the invalid OU reference "Workloads-Production"
-5. Lists valid OU names from the organization structure
-
-**Expected diagnosis:**
-- **Category:** Infrastructure Issue
-- **Root Cause:** `accounts-config.yaml` references OU "Workloads-Production" but the actual OU is "Workloads-Prod"
-- **Recommendation:** Update the OU name in `accounts-config.yaml` to match the actual organization structure
-
----
+- Pipeline: `codesuite-diag-scenario3-pipeline`
+- Failure: Build stage fails because `accounts-config.yaml` references OU "Workloads-Production" (should be "Workloads-Prod")
+- Agent investigates: gets pipeline state → reads build logs → reads config file → identifies OU mismatch
 
 ## Verifying the Setup
 
-After deploying infrastructure and starting services, use these steps to confirm everything is working:
-
-### 1. Verify Infrastructure Deployment
-
 ```bash
-cd infrastructure
-
-# Check all stacks deployed successfully
-cdk list
-# Should show: SharedStack, Scenario1Stack, Scenario2Stack, Scenario3Stack
-
-# Verify pipelines exist and have failed executions
-aws codepipeline list-pipelines --query 'pipelines[].name'
-```
-
-### 2. Verify Backend API
-
-```bash
-# Health check
+# Backend health check
 curl http://localhost:8000/health
-# Expected: {"status": "ok"}
+# Expected: {"status":"healthy","service":"codesuite-diagnostics-backend"}
 
-# List pipelines
-curl http://localhost:8000/api/pipelines
-# Expected: JSON array with 3 pipelines and their statuses
+# List failed pipelines
+curl http://localhost:8000/api/pipelines | python3 -m json.tool
+
+# Trigger a diagnosis
+curl -X POST http://localhost:8000/api/pipelines/codesuite-diag-scenario1-pipeline/executions/latest/diagnose
 ```
 
-### 3. Verify Frontend
-
-Open http://localhost:5173 in your browser. You should see:
-- AWS console-style dark navigation sidebar
-- Pipeline list with 3 pipelines showing "Failed" status indicators
-- Clicking a pipeline shows stage visualization and execution history
-
-### 4. Verify End-to-End Diagnosis
-
-For each scenario, trigger a diagnosis and confirm the expected output:
+## Running Tests
 
 ```bash
-# Get the latest failed execution ID for a pipeline
-EXEC_ID=$(curl -s http://localhost:8000/api/pipelines/Scenario1Pipeline/executions | python3 -c "import sys,json; execs=json.load(sys.stdin); print(next(e['id'] for e in execs if e['status']=='Failed'))")
+# Unit tests (no AWS credentials needed)
+python3.11 -m pytest tests/test_codecommit_handlers.py tests/test_codepipeline_handlers.py -v
 
-# Trigger diagnosis
-curl -X POST http://localhost:8000/api/pipelines/Scenario1Pipeline/executions/$EXEC_ID/diagnose
+# E2E tests (requires running backend + deployed infrastructure)
+RUN_E2E_TESTS=1 python3.11 -m pytest tests/test_e2e_scenarios.py -v
 ```
-
-**Expected results per scenario:**
-
-| Scenario | Root Cause Category | Key Finding |
-|----------|-------------------|-------------|
-| 1 | Configuration Issue | Missing `appspec.yml` |
-| 2 | Permission Issue | Missing `codecommit:GitPull` |
-| 3 | Infrastructure Issue | OU name mismatch ("Workloads-Production" vs "Workloads-Prod") |
-
-### 5. Verify from the UI
-
-1. Select each failed pipeline in the UI
-2. Click "Analyze" on the failed execution
-3. Confirm the Analysis Panel shows the correct category, description, affected resource, and recommended fix
-4. Verify the loading animation appears while the agent processes
-
-If all three scenarios produce correct diagnoses, the demo is fully operational.
-
----
 
 ## Teardown
 
-To remove all AWS resources created by the demo:
+Remove all AWS resources:
 
 ```bash
 cd infrastructure
+source .venv/bin/activate
 cdk destroy --all
 ```
 
-This will:
-- Delete all three scenario stacks and the shared stack
-- Remove CodeCommit repositories, CodePipeline pipelines, CodeBuild projects, CodeDeploy applications, IAM roles, and S3 buckets
-- All resources are configured with `RemovalPolicy.DESTROY` for clean teardown
-
-Confirm the deletion when prompted. No manual cleanup is required — all resources are removed automatically.
+This removes all CodeCommit repos, pipelines, EC2 instances, IAM roles, S3 buckets, etc.
 
 ## Troubleshooting
 
-### Common Issues
-
-**CDK deploy fails with "bootstrap required"**
-```bash
-cdk bootstrap aws://<ACCOUNT_ID>/<REGION>
-```
-
-**Bedrock model access denied**
-Ensure you've enabled Claude 3.5 Sonnet access in the [Bedrock console](https://console.aws.amazon.com/bedrock/) under Model Access.
-
-**MCP server connection errors**
-Verify AWS credentials are configured and have the necessary permissions for CodeCommit, CodePipeline, IAM, and CloudWatch read access.
-
-**Frontend can't reach backend**
-Ensure the backend is running on port 8000. The frontend Vite dev server proxies API requests to `http://localhost:8000`.
+| Issue | Solution |
+|-------|----------|
+| `ModuleNotFoundError: No module named 'mcp'` | Install with `python3.11 -m pip install mcp` |
+| `CDK synth fails with "StackAccountRegionNotSpecified"` | Update `infrastructure/app.py` with your account ID and region |
+| Bedrock returns "model is legacy" | Use an inference profile ID (e.g., `us.anthropic.claude-haiku-4-5-20251001-v1:0`) |
+| Bedrock returns "Access denied" | Enable model access in the Bedrock console |
+| Vite requires Node.js 20.19+ | Upgrade Node: `nvm install 22 && nvm use 22` |
+| Frontend can't reach backend | Ensure backend runs on port 8000; frontend proxies to it |
+| Pipelines show "branch not found" | Push seed data first (see Step 6 above) |
+| `cdk deploy` hangs at VPC lookup | Ensure your AWS credentials are valid and region is correct |
 
 ## License
 
