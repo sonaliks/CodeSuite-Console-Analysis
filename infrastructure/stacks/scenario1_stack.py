@@ -12,6 +12,7 @@ from aws_cdk import aws_codecommit as codecommit
 from aws_cdk import aws_codedeploy as codedeploy
 from aws_cdk import aws_codepipeline as codepipeline
 from aws_cdk import aws_codepipeline_actions as cpactions
+from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
@@ -22,6 +23,7 @@ class Scenario1Stack(Stack):
 
     Resources:
         - CodeCommit repository (without appspec.yml)
+        - EC2 instance with CodeDeploy agent
         - CodeDeploy application and deployment group
         - CodePipeline: Source (CodeCommit) → Deploy (CodeDeploy)
     """
@@ -44,6 +46,46 @@ class Scenario1Stack(Stack):
             description="Demo app missing appspec.yml (Scenario 1 - Configuration Issue)",
         )
 
+        # VPC for the EC2 instance (use default VPC)
+        vpc = ec2.Vpc.from_lookup(self, "DefaultVpc", is_default=True)
+
+        # IAM role for EC2 instance (needs CodeDeploy agent + S3 access)
+        instance_role = iam.Role(
+            self,
+            "Scenario1InstanceRole",
+            assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSSMManagedInstanceCore"),
+            ],
+        )
+        artifact_bucket.grant_read(instance_role)
+
+        # EC2 instance with CodeDeploy agent installed via user data
+        user_data = ec2.UserData.for_linux()
+        user_data.add_commands(
+            "yum update -y",
+            "yum install -y ruby wget",
+            "wget https://aws-codedeploy-us-east-1.s3.us-east-1.amazonaws.com/latest/install",
+            "chmod +x ./install",
+            "./install auto",
+            "service codedeploy-agent start",
+        )
+
+        instance = ec2.Instance(
+            self,
+            "Scenario1Instance",
+            instance_type=ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
+            machine_image=ec2.AmazonLinuxImage(
+                generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
+            ),
+            vpc=vpc,
+            role=instance_role,
+            user_data=user_data,
+        )
+
+        # Tag the instance for CodeDeploy targeting
+        cdk.Tags.of(instance).add("CodeDeploy", "Scenario1")
+
         # CodeDeploy application
         application = codedeploy.ServerApplication(
             self,
@@ -51,14 +93,16 @@ class Scenario1Stack(Stack):
             application_name="codesuite-diag-scenario1-app",
         )
 
-        # CodeDeploy deployment group (targets don't need to exist for demo)
+        # CodeDeploy deployment group targeting tagged instances
         deployment_group = codedeploy.ServerDeploymentGroup(
             self,
             "Scenario1DeploymentGroup",
             application=application,
             deployment_group_name="codesuite-diag-scenario1-dg",
             install_agent=False,
-            # No EC2 instances - deployment will fail at appspec validation
+            ec2_instance_tags=codedeploy.InstanceTagSet(
+                {"CodeDeploy": ["Scenario1"]}
+            ),
         )
 
         # Pipeline artifacts

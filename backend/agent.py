@@ -162,26 +162,56 @@ class DiagnosticsAgent:
         except (json.JSONDecodeError, ValueError, IndexError):
             pass
 
-        # Fallback: extract from natural language
+        # Fallback: extract structured fields from markdown response
         cat = self._classify_category("", text_lower)
 
-        # Try to extract recommended_fix from markdown sections
+        # Extract description (root cause description section)
+        description = self._extract_section(text, "root cause description")
+        if not description:
+            description = self._extract_section(text, "root_cause_description")
+        if not description:
+            description = self._extract_section(text, "description")
+
+        # Extract recommended_fix
         recommended_fix = self._extract_section(text, "recommended fix")
         if not recommended_fix:
             recommended_fix = self._extract_section(text, "recommended_fix")
         if not recommended_fix:
-            recommended_fix = text[:1000]
+            recommended_fix = self._extract_section(text, "resolution")
+        if not recommended_fix:
+            recommended_fix = self._extract_section(text, "fix")
 
-        # Try to extract affected_resource
-        affected_resource = self._extract_section(text, "affected_resource")
+        # Extract affected_resource
+        affected_resource = self._extract_section(text, "affected resource")
         if not affected_resource:
-            affected_resource = self._extract_section(text, "affected resource")
+            affected_resource = self._extract_section(text, "affected_resource")
+
+        # If we couldn't extract a description, use a cleaned-up version of the full text
+        if not description:
+            # Remove common prefixes the agent adds
+            import re
+            cleaned = re.sub(
+                r'^(Perfect!|Excellent!|Great!|Based on my investigation,?)[\s\S]{0,100}?(?=##|\*\*)',
+                '', text, flags=re.IGNORECASE
+            ).strip()
+            description = cleaned[:2000] if cleaned else text[:2000]
+
+        # If recommended_fix is still empty, use the full text as it likely contains the fix
+        if not recommended_fix:
+            recommended_fix = description
+
+        # If affected_resource is still empty, try to find ARNs or resource names
         if not affected_resource:
-            affected_resource = "See description"
+            import re
+            arn_match = re.search(r'arn:aws:[^\s\)\"]+', text)
+            if arn_match:
+                affected_resource = arn_match.group(0)
+            else:
+                affected_resource = "See description"
 
         return DiagnosisResponse(
             root_cause_category=cat,
-            root_cause_description=text[:2000],
+            root_cause_description=description,
             affected_resource=affected_resource,
             recommended_fix=recommended_fix,
             evidence=evidence,
@@ -219,17 +249,26 @@ class DiagnosticsAgent:
     def _extract_section(self, text: str, section_name: str) -> str:
         """Try to extract a named section from markdown-formatted text."""
         import re
-        # Look for patterns like "**Recommended Fix:**" or "### Recommended Fix"
+
+        # Multiple patterns to match different markdown heading/label styles
         patterns = [
-            rf'\*\*{re.escape(section_name)}\*?\*?:?\s*\n?(.*?)(?:\n\n|\n\*\*|\n###|\Z)',
-            rf'###?\s*\*?\*?{re.escape(section_name)}\*?\*?\s*\n(.*?)(?:\n\n\n|\n###|\Z)',
+            # ### **Section Name**\ncontent
+            rf'###?\s*\*?\*?\s*{re.escape(section_name)}\s*\*?\*?\s*:?\s*\n(.*?)(?=\n###|\n##|\n\*\*[A-Z]|\Z)',
+            # **Section Name:**\ncontent or **section_name:** content
+            rf'\*\*\s*{re.escape(section_name)}\s*\*?\*?\s*:?\s*\n?(.*?)(?=\n\*\*[A-Z]|\n###|\n##|\Z)',
+            # section_name: content (on same line or next)
+            rf'{re.escape(section_name)}\s*:\s*\n?(.*?)(?=\n\*\*[A-Z]|\n###|\n##|\Z)',
         ]
+
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
             if match:
                 result = match.group(1).strip()
+                # Remove trailing markdown artifacts
+                result = re.sub(r'\n---\s*$', '', result).strip()
                 if len(result) > 10:
-                    return result[:1000]
+                    return result[:2000]
+
         return ""
 
 

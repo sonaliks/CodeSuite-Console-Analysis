@@ -1,3 +1,4 @@
+import type React from 'react';
 import type { AnalysisState, RootCauseCategory, ToolInvocationStep } from '../types';
 
 interface AnalysisPanelProps {
@@ -100,13 +101,50 @@ function RecommendedFix({ text }: { text: string }) {
           );
         }
         return (
-          <p key={index} className="text-sm text-aws-text whitespace-pre-wrap leading-relaxed">
-            {segment.content}
-          </p>
+          <div key={index} className="text-sm text-aws-text leading-relaxed">
+            {segment.content.split('\n').map((line, lineIndex) => {
+              // Handle markdown headers
+              if (line.startsWith('### ')) {
+                return <h4 key={lineIndex} className="font-bold text-aws-text mt-3 mb-1">{line.replace(/^###\s*\*?\*?/, '').replace(/\*?\*?\s*$/, '')}</h4>;
+              }
+              if (line.startsWith('## ')) {
+                return <h3 key={lineIndex} className="font-bold text-aws-text mt-4 mb-1 text-base">{line.replace(/^##\s*\*?\*?/, '').replace(/\*?\*?\s*$/, '')}</h3>;
+              }
+              // Handle bullet points
+              if (line.match(/^\s*[-*]\s/)) {
+                return <li key={lineIndex} className="ml-4 list-disc text-sm">{renderInlineMarkdown(line.replace(/^\s*[-*]\s/, ''))}</li>;
+              }
+              // Handle numbered lists
+              if (line.match(/^\s*\d+\.\s/)) {
+                return <li key={lineIndex} className="ml-4 list-decimal text-sm">{renderInlineMarkdown(line.replace(/^\s*\d+\.\s/, ''))}</li>;
+              }
+              // Empty lines become spacing
+              if (line.trim() === '') {
+                return <div key={lineIndex} className="h-2" />;
+              }
+              // Regular text
+              return <p key={lineIndex} className="text-sm">{renderInlineMarkdown(line)}</p>;
+            })}
+          </div>
         );
       })}
     </div>
   );
+}
+
+/** Renders inline markdown (bold, code, etc.) within a line */
+function renderInlineMarkdown(text: string): React.ReactNode {
+  // Split by bold markers (**text**) and inline code (`text`)
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={i} className="bg-gray-200 px-1 py-0.5 rounded text-xs font-mono">{part.slice(1, -1)}</code>;
+    }
+    return <span key={i}>{part}</span>;
+  });
 }
 
 /** Calculates progress bar width based on completed tool steps */
@@ -257,9 +295,9 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
               <label className="text-xs font-bold text-aws-text-secondary uppercase tracking-wide">
                 Description
               </label>
-              <p className="mt-2 text-sm text-aws-text leading-relaxed">
-                {analysis.result.root_cause_description}
-              </p>
+              <div className="mt-2 text-sm text-aws-text leading-relaxed prose prose-sm max-w-none">
+                <RecommendedFix text={analysis.result.root_cause_description} />
+              </div>
             </div>
 
             {/* Affected Resource */}

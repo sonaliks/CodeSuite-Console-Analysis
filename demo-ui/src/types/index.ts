@@ -76,7 +76,7 @@ export interface LoadingState {
 }
 
 /** MCP tool invocation step shown during loading */
-export type ToolStepStatus = 'pending' | 'in-progress' | 'completed';
+export type ToolStepStatus = 'pending' | 'in-progress' | 'complete' | 'completed';
 
 export interface ToolInvocationStep {
   id: string;

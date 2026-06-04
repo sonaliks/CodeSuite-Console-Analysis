@@ -3,6 +3,7 @@ import { Layout } from './components/Layout';
 import { PipelineList } from './components/PipelineList';
 import { PipelineDetail } from './components/PipelineDetail';
 import { AnalysisPanel } from './components/AnalysisPanel';
+import { getPipelineDetail, triggerDiagnosis } from './api/client';
 import type { PipelineDetail as PipelineDetailType, AnalysisState, ToolInvocationStep } from './types';
 
 /** Default MCP tool invocation steps shown during diagnosis loading */
@@ -21,13 +22,27 @@ function App() {
     isLoading: false,
   });
 
-  const handleSelectPipeline = (name: string) => {
+  const handleSelectPipeline = async (name: string) => {
     setSelectedPipeline(name);
-    // Pipeline detail fetching will be implemented in task 5.6
     setPipelineDetail(null);
+    setAnalysis({ isLoading: false });
+
+    try {
+      const detail = await getPipelineDetail(name);
+      setPipelineDetail(detail);
+    } catch (err) {
+      console.error('Failed to fetch pipeline detail:', err);
+      // Show a minimal detail so the user can still trigger analysis
+      setPipelineDetail({
+        name,
+        stages: ['Source', 'Build'],
+        status: 'Failed',
+        description: '',
+      } as PipelineDetailType);
+    }
   };
 
-  const handleAnalyze = (pipelineName: string, executionId: string) => {
+  const handleAnalyze = async (pipelineName: string, executionId: string) => {
     setAnalysis({
       isLoading: true,
       pipelineName,
@@ -37,7 +52,31 @@ function App() {
         status: i === 0 ? 'in-progress' : 'pending',
       })),
     });
-    // Diagnosis triggering will be implemented in task 5.6
+
+    try {
+      const result = await triggerDiagnosis(pipelineName, executionId);
+      setAnalysis({
+        isLoading: false,
+        pipelineName,
+        executionId,
+        result,
+        toolSteps: DEFAULT_TOOL_STEPS.map((step) => ({
+          ...step,
+          status: 'complete',
+        })),
+      });
+    } catch (err) {
+      setAnalysis({
+        isLoading: false,
+        pipelineName,
+        executionId,
+        error: err instanceof Error ? err.message : 'Diagnosis failed',
+        toolSteps: DEFAULT_TOOL_STEPS.map((step) => ({
+          ...step,
+          status: 'complete',
+        })),
+      });
+    }
   };
 
   return (
