@@ -4,7 +4,7 @@ import os
 
 # Bedrock configuration
 BEDROCK_MODEL_ID = os.environ.get(
-    "BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    "BEDROCK_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 )
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", "us-east-1")
 

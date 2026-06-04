@@ -1,14 +1,18 @@
-"""MCP Client module for spawning and communicating with MCP servers.
+"""MCP Client module using the official MCP SDK client.
 
 This module manages MCP server subprocesses and provides a unified interface
-for invoking tools across multiple MCP servers via stdio JSON-RPC.
+for invoking tools across multiple MCP servers via the SDK's stdio transport.
 """
 
-import asyncio
+from __future__ import annotations
+
 import json
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from mcp.client.session import ClientSession
+from mcp.client.stdio import stdio_client, StdioServerParameters
 
 
 @dataclass
@@ -16,8 +20,8 @@ class MCPServerConfig:
     """Configuration for an MCP server."""
     name: str
     command: str
-    args: list[str] = field(default_factory=list)
-    env: dict[str, str] = field(default_factory=dict)
+    args: List[str] = field(default_factory=list)
+    env: Optional[Dict[str, str]] = None
 
 
 @dataclass
@@ -33,57 +37,76 @@ class MCPClient:
     """Client for managing and communicating with MCP servers."""
 
     def __init__(self):
-        self._servers: dict[str, MCPServerConfig] = {}
-        self._processes: dict[str, asyncio.subprocess.Process] = {}
-        self._tools: dict[str, MCPTool] = {}
-        self._request_id = 0
+        self._servers: Dict[str, MCPServerConfig] = {}
+        self._tools: Dict[str, MCPTool] = {}
+        self._sessions: Dict[str, Any] = {}
+        self._contexts: Dict[str, Any] = {}
 
     def register_server(self, config: MCPServerConfig):
         """Register an MCP server configuration."""
         self._servers[config.name] = config
 
     async def start_server(self, server_name: str):
-        """Start an MCP server subprocess."""
+        """Start an MCP server and discover its tools."""
         config = self._servers[server_name]
 
-        env = os.environ.copy()
-        env.update(config.env)
-
-        process = await asyncio.create_subprocess_exec(
-            config.command,
-            *config.args,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
+        server_params = StdioServerParameters(
+            command=config.command,
+            args=config.args,
+            env=config.env,
         )
 
-        self._processes[server_name] = process
+        # Create the stdio client context
+        ctx = stdio_client(server_params)
+        streams = await ctx.__aenter__()
+        self._contexts[server_name] = ctx
 
-        # Initialize the MCP connection
-        await self._initialize(server_name)
+        # Create a session
+        session = ClientSession(*streams)
+        await session.__aenter__()
+        self._sessions[server_name] = session
+
+        # Initialize the session
+        await session.initialize()
 
         # Discover tools
-        await self._discover_tools(server_name)
+        tools_result = await session.list_tools()
+        for tool in tools_result.tools:
+            self._tools[tool.name] = MCPTool(
+                name=tool.name,
+                description=tool.description or "",
+                input_schema=tool.inputSchema if tool.inputSchema else {},
+                server_name=server_name,
+            )
 
     async def start_all(self):
         """Start all registered MCP servers."""
         for server_name in self._servers:
-            await self.start_server(server_name)
+            try:
+                await self.start_server(server_name)
+            except Exception as e:
+                print(f"Warning: Failed to start MCP server '{server_name}': {e}")
 
     async def stop_all(self):
-        """Stop all running MCP server processes."""
-        for name, process in self._processes.items():
-            if process.returncode is None:
-                process.terminate()
-                await process.wait()
-        self._processes.clear()
+        """Stop all running MCP server sessions."""
+        for name, session in self._sessions.items():
+            try:
+                await session.__aexit__(None, None, None)
+            except Exception:
+                pass
+        for name, ctx in self._contexts.items():
+            try:
+                await ctx.__aexit__(None, None, None)
+            except Exception:
+                pass
+        self._sessions.clear()
+        self._contexts.clear()
 
-    def get_all_tools(self) -> list[MCPTool]:
+    def get_all_tools(self) -> List[MCPTool]:
         """Get all tools from all registered servers."""
         return list(self._tools.values())
 
-    def get_tool_schemas_for_bedrock(self) -> list[dict]:
+    def get_tool_schemas_for_bedrock(self) -> List[dict]:
         """Get tool schemas formatted for Bedrock Converse API."""
         tools = []
         for tool in self._tools.values():
@@ -105,94 +128,26 @@ class MCPClient:
 
         tool = self._tools[tool_name]
         server_name = tool.server_name
+        session = self._sessions.get(server_name)
 
-        response = await self._send_request(
-            server_name,
-            "tools/call",
-            {"name": tool_name, "arguments": arguments},
-        )
+        if not session:
+            return {"error": f"Server '{server_name}' is not connected"}
 
-        # Extract text content from MCP response
-        if "result" in response:
-            content = response["result"].get("content", [])
-            if content and content[0].get("type") == "text":
-                try:
-                    return json.loads(content[0]["text"])
-                except json.JSONDecodeError:
-                    return {"text": content[0]["text"]}
-        elif "error" in response:
-            return {"error": response["error"].get("message", "Unknown error")}
+        try:
+            result = await session.call_tool(tool_name, arguments)
 
-        return {"error": "Unexpected response format"}
+            # Extract text content from MCP response
+            if result.content:
+                for content_item in result.content:
+                    if content_item.type == "text":
+                        try:
+                            return json.loads(content_item.text)
+                        except json.JSONDecodeError:
+                            return {"text": content_item.text}
 
-    async def _initialize(self, server_name: str):
-        """Send initialize request to MCP server."""
-        await self._send_request(
-            server_name,
-            "initialize",
-            {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "codesuite-diagnostics", "version": "0.1.0"},
-            },
-        )
-        # Send initialized notification
-        await self._send_notification(server_name, "notifications/initialized", {})
-
-    async def _discover_tools(self, server_name: str):
-        """Discover tools from an MCP server."""
-        response = await self._send_request(server_name, "tools/list", {})
-
-        if "result" in response:
-            for tool_data in response["result"].get("tools", []):
-                tool = MCPTool(
-                    name=tool_data["name"],
-                    description=tool_data.get("description", ""),
-                    input_schema=tool_data.get("inputSchema", {}),
-                    server_name=server_name,
-                )
-                self._tools[tool.name] = tool
-
-    async def _send_request(self, server_name: str, method: str, params: dict) -> dict:
-        """Send a JSON-RPC request to an MCP server and return the response."""
-        process = self._processes.get(server_name)
-        if not process or process.returncode is not None:
-            return {"error": {"message": f"Server '{server_name}' is not running"}}
-
-        self._request_id += 1
-        request = {
-            "jsonrpc": "2.0",
-            "id": self._request_id,
-            "method": method,
-            "params": params,
-        }
-
-        request_bytes = json.dumps(request).encode() + b"\n"
-        process.stdin.write(request_bytes)
-        await process.stdin.drain()
-
-        # Read response line
-        response_line = await process.stdout.readline()
-        if not response_line:
-            return {"error": {"message": "No response from server"}}
-
-        return json.loads(response_line.decode())
-
-    async def _send_notification(self, server_name: str, method: str, params: dict):
-        """Send a JSON-RPC notification (no response expected)."""
-        process = self._processes.get(server_name)
-        if not process or process.returncode is not None:
-            return
-
-        notification = {
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-        }
-
-        notification_bytes = json.dumps(notification).encode() + b"\n"
-        process.stdin.write(notification_bytes)
-        await process.stdin.drain()
+            return {"error": "Empty response from tool"}
+        except Exception as e:
+            return {"error": str(e)}
 
 
 def get_default_mcp_client() -> MCPClient:
@@ -204,29 +159,29 @@ def get_default_mcp_client() -> MCPClient:
 
     client.register_server(MCPServerConfig(
         name="codecommit",
-        command="python",
+        command="/opt/homebrew/bin/python3.11",
         args=[str(mcp_servers_dir / "codecommit" / "server.py")],
     ))
 
     client.register_server(MCPServerConfig(
         name="codepipeline",
-        command="python",
+        command="/opt/homebrew/bin/python3.11",
         args=[str(mcp_servers_dir / "codepipeline" / "server.py")],
     ))
 
-    # AWS Labs MCP servers (installed via uvx)
-    client.register_server(MCPServerConfig(
-        name="aws-iam",
-        command="uvx",
-        args=["awslabs.aws-iam-mcp-server@latest"],
-        env={"FASTMCP_LOG_LEVEL": "ERROR"},
-    ))
-
-    client.register_server(MCPServerConfig(
-        name="aws-cloudwatch",
-        command="uvx",
-        args=["awslabs.amazon-cloudwatch-mcp-server@latest"],
-        env={"FASTMCP_LOG_LEVEL": "ERROR"},
-    ))
+    # AWS Labs MCP servers (uncomment when installed via uvx)
+    # client.register_server(MCPServerConfig(
+    #     name="aws-iam",
+    #     command="uvx",
+    #     args=["awslabs.aws-iam-mcp-server@latest"],
+    #     env={"FASTMCP_LOG_LEVEL": "ERROR"},
+    # ))
+    #
+    # client.register_server(MCPServerConfig(
+    #     name="aws-cloudwatch",
+    #     command="uvx",
+    #     args=["awslabs.amazon-cloudwatch-mcp-server@latest"],
+    #     env={"FASTMCP_LOG_LEVEL": "ERROR"},
+    # ))
 
     return client

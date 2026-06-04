@@ -1,5 +1,7 @@
 """API route definitions for the CodeSuite Diagnostics Demo."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException
 
 from agent import diagnose_pipeline_failure

@@ -4,7 +4,11 @@ Uses the Bedrock Converse API with tool_use to invoke MCP tools
 and produce structured diagnoses.
 """
 
+from __future__ import annotations
+
 import json
+from typing import Optional
+
 import boto3
 
 from config import BEDROCK_MODEL_ID, BEDROCK_REGION
@@ -16,7 +20,7 @@ from prompts import DIAGNOSTIC_SYSTEM_PROMPT, DIAGNOSIS_USER_PROMPT_TEMPLATE
 class DiagnosticsAgent:
     """Agent that orchestrates MCP tool calls via Bedrock Converse API."""
 
-    def __init__(self, mcp_client: MCPClient | None = None):
+    def __init__(self, mcp_client: Optional[MCPClient] = None):
         self._mcp_client = mcp_client or get_default_mcp_client()
         self._bedrock = boto3.client(
             "bedrock-runtime",
@@ -128,6 +132,8 @@ class DiagnosticsAgent:
             if "text" in content_block:
                 text += content_block["text"]
 
+        text_lower = text.lower()
+
         # Try to parse as JSON first
         try:
             # Look for JSON block in the response
@@ -142,15 +148,9 @@ class DiagnosticsAgent:
 
             if json_str:
                 data = json.loads(json_str)
-                category = data.get("root_cause_category", "Configuration Issue")
+                category = data.get("root_cause_category", "")
 
-                # Map to enum
-                if "permission" in category.lower():
-                    cat = RootCauseCategory.PERMISSION
-                elif "infrastructure" in category.lower():
-                    cat = RootCauseCategory.INFRASTRUCTURE
-                else:
-                    cat = RootCauseCategory.CONFIGURATION
+                cat = self._classify_category(category, text_lower)
 
                 return DiagnosisResponse(
                     root_cause_category=cat,
@@ -162,18 +162,79 @@ class DiagnosticsAgent:
         except (json.JSONDecodeError, ValueError, IndexError):
             pass
 
-        # Fallback: use the text as the description
+        # Fallback: extract from natural language
+        cat = self._classify_category("", text_lower)
+
+        # Try to extract recommended_fix from markdown sections
+        recommended_fix = self._extract_section(text, "recommended fix")
+        if not recommended_fix:
+            recommended_fix = self._extract_section(text, "recommended_fix")
+        if not recommended_fix:
+            recommended_fix = text[:1000]
+
+        # Try to extract affected_resource
+        affected_resource = self._extract_section(text, "affected_resource")
+        if not affected_resource:
+            affected_resource = self._extract_section(text, "affected resource")
+        if not affected_resource:
+            affected_resource = "See description"
+
         return DiagnosisResponse(
-            root_cause_category=RootCauseCategory.CONFIGURATION,
-            root_cause_description=text[:1000],
-            affected_resource="Unknown",
-            recommended_fix="See description above",
+            root_cause_category=cat,
+            root_cause_description=text[:2000],
+            affected_resource=affected_resource,
+            recommended_fix=recommended_fix,
             evidence=evidence,
         )
 
+    def _classify_category(self, explicit_category: str, full_text_lower: str) -> RootCauseCategory:
+        """Classify the root cause category from explicit label or text analysis."""
+        # Check explicit category first
+        if explicit_category:
+            if "permission" in explicit_category.lower():
+                return RootCauseCategory.PERMISSION
+            if "infrastructure" in explicit_category.lower():
+                return RootCauseCategory.INFRASTRUCTURE
+
+        # Analyze full text for permission indicators
+        permission_keywords = [
+            "access denied", "accessdenied", "permission", "iam",
+            "gitpull", "git pull", "unauthorized", "forbidden",
+            "policy", "role does not have"
+        ]
+        if any(kw in full_text_lower for kw in permission_keywords):
+            return RootCauseCategory.PERMISSION
+
+        # Analyze for infrastructure indicators
+        infra_keywords = [
+            "infrastructure", "organizational unit", "ou name",
+            "ou mismatch", "stack", "organization", "lza",
+            "landing zone", "accounts-config"
+        ]
+        if any(kw in full_text_lower for kw in infra_keywords):
+            return RootCauseCategory.INFRASTRUCTURE
+
+        return RootCauseCategory.CONFIGURATION
+
+    def _extract_section(self, text: str, section_name: str) -> str:
+        """Try to extract a named section from markdown-formatted text."""
+        import re
+        # Look for patterns like "**Recommended Fix:**" or "### Recommended Fix"
+        patterns = [
+            rf'\*\*{re.escape(section_name)}\*?\*?:?\s*\n?(.*?)(?:\n\n|\n\*\*|\n###|\Z)',
+            rf'###?\s*\*?\*?{re.escape(section_name)}\*?\*?\s*\n(.*?)(?:\n\n\n|\n###|\Z)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if match:
+                result = match.group(1).strip()
+                if len(result) > 10:
+                    return result[:1000]
+        return ""
+
 
 # Module-level agent instance
-_agent: DiagnosticsAgent | None = None
+_agent: Optional[DiagnosticsAgent] = None
 
 
 async def diagnose_pipeline_failure(
