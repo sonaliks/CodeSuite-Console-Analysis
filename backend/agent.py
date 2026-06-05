@@ -332,3 +332,159 @@ async def diagnose_pipeline_failure(
         _agent = DiagnosticsAgent()
 
     return await _agent.diagnose(pipeline_name, execution_id)
+
+
+async def diagnose_deployment_failure(
+    deployment_id: str,
+    application_name: str,
+    deployment_group: str,
+    status: str,
+    error_info: dict,
+) -> DiagnosisResponse:
+    """Diagnose a CodeDeploy deployment failure using the Bedrock agent."""
+    global _agent
+    if _agent is None:
+        _agent = DiagnosticsAgent()
+
+    await _agent.initialize()
+
+    from prompts import DIAGNOSTIC_SYSTEM_PROMPT
+
+    user_message = (
+        f"Diagnose the following failed CodeDeploy deployment:\n\n"
+        f"Deployment ID: {deployment_id}\n"
+        f"Application: {application_name}\n"
+        f"Deployment Group: {deployment_group}\n"
+        f"Status: {status}\n"
+        f"Error Code: {error_info.get('code', 'N/A')}\n"
+        f"Error Message: {error_info.get('message', 'N/A')}\n\n"
+        f"Please investigate the failure using available tools and provide a structured diagnosis."
+    )
+
+    tool_config = {"tools": _agent._mcp_client.get_tool_schemas_for_bedrock()}
+    messages = [{"role": "user", "content": [{"text": user_message}]}]
+    evidence = []
+    max_iterations = 10
+
+    for _ in range(max_iterations):
+        response = _agent._bedrock.converse(
+            modelId=BEDROCK_MODEL_ID,
+            system=[{"text": DIAGNOSTIC_SYSTEM_PROMPT}],
+            messages=messages,
+            toolConfig=tool_config,
+        )
+
+        output = response["output"]["message"]
+        messages.append(output)
+        stop_reason = response["stopReason"]
+
+        if stop_reason == "tool_use":
+            tool_results = []
+            for content_block in output["content"]:
+                if "toolUse" in content_block:
+                    tool_use = content_block["toolUse"]
+                    result = await _agent._mcp_client.call_tool(tool_use["name"], tool_use["input"])
+                    evidence.append(EvidenceItem(
+                        source=tool_use["name"],
+                        finding=json.dumps(result, default=str)[:500],
+                    ))
+                    tool_results.append({
+                        "toolResult": {
+                            "toolUseId": tool_use["toolUseId"],
+                            "content": [{"text": json.dumps(result, default=str)}],
+                        }
+                    })
+            messages.append({"role": "user", "content": tool_results})
+        elif stop_reason == "end_turn":
+            return _agent._parse_diagnosis(output, evidence)
+
+    return DiagnosisResponse(
+        root_cause_category=RootCauseCategory.CONFIGURATION,
+        root_cause_description="Diagnosis incomplete - max iterations reached",
+        affected_resource=deployment_id,
+        recommended_fix="Please try again or investigate manually",
+        evidence=evidence,
+    )
+
+
+async def diagnose_build_failure(
+    project_name: str,
+    build_id: str,
+    status: str,
+    phases: list,
+    logs: dict,
+) -> DiagnosisResponse:
+    """Diagnose a CodeBuild build failure using the Bedrock agent."""
+    global _agent
+    if _agent is None:
+        _agent = DiagnosticsAgent()
+
+    await _agent.initialize()
+
+    from prompts import DIAGNOSTIC_SYSTEM_PROMPT
+
+    # Find the failed phase
+    failed_phase = next((p for p in phases if p.get("phaseStatus") == "FAILED"), None)
+    failed_phase_info = ""
+    if failed_phase:
+        failed_phase_info = (
+            f"Failed Phase: {failed_phase.get('phaseType', 'Unknown')}\n"
+            f"Phase Context: {json.dumps(failed_phase.get('contexts', []), default=str)}\n"
+        )
+
+    user_message = (
+        f"Diagnose the following failed CodeBuild build:\n\n"
+        f"Project Name: {project_name}\n"
+        f"Build ID: {build_id}\n"
+        f"Status: {status}\n"
+        f"{failed_phase_info}"
+        f"Log Group: {logs.get('groupName', 'N/A')}\n"
+        f"Log Stream: {logs.get('streamName', 'N/A')}\n\n"
+        f"Please investigate the failure using available tools (especially CloudWatch logs) "
+        f"and provide a structured diagnosis."
+    )
+
+    tool_config = {"tools": _agent._mcp_client.get_tool_schemas_for_bedrock()}
+    messages = [{"role": "user", "content": [{"text": user_message}]}]
+    evidence = []
+    max_iterations = 10
+
+    for _ in range(max_iterations):
+        response = _agent._bedrock.converse(
+            modelId=BEDROCK_MODEL_ID,
+            system=[{"text": DIAGNOSTIC_SYSTEM_PROMPT}],
+            messages=messages,
+            toolConfig=tool_config,
+        )
+
+        output = response["output"]["message"]
+        messages.append(output)
+        stop_reason = response["stopReason"]
+
+        if stop_reason == "tool_use":
+            tool_results = []
+            for content_block in output["content"]:
+                if "toolUse" in content_block:
+                    tool_use = content_block["toolUse"]
+                    result = await _agent._mcp_client.call_tool(tool_use["name"], tool_use["input"])
+                    evidence.append(EvidenceItem(
+                        source=tool_use["name"],
+                        finding=json.dumps(result, default=str)[:500],
+                    ))
+                    tool_results.append({
+                        "toolResult": {
+                            "toolUseId": tool_use["toolUseId"],
+                            "content": [{"text": json.dumps(result, default=str)}],
+                        }
+                    })
+            messages.append({"role": "user", "content": tool_results})
+        elif stop_reason == "end_turn":
+            return _agent._parse_diagnosis(output, evidence)
+
+    return DiagnosisResponse(
+        root_cause_category=RootCauseCategory.CONFIGURATION,
+        root_cause_description="Diagnosis incomplete - max iterations reached",
+        affected_resource=build_id,
+        recommended_fix="Please try again or investigate manually",
+        evidence=evidence,
+    )

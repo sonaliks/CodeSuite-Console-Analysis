@@ -36,6 +36,14 @@ interface DeploymentDetail {
   }>;
 }
 
+interface DiagnosisResult {
+  root_cause_category: string;
+  root_cause_description: string;
+  affected_resource: string;
+  recommended_fix: string;
+  evidence: Array<{ source: string; finding: string }>;
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 function getStatusBadge(status: string) {
@@ -55,11 +63,38 @@ function getStatusBadge(status: string) {
 }
 
 function DeploymentDetailPanel({ detail }: { detail: DeploymentDetail }) {
+  const [diagnosis, setDiagnosis] = useState<DiagnosisResult | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+
+  const handleAnalyze = () => {
+    setDiagnosing(true);
+    setDiagnosis(null);
+    fetch(`${API_BASE_URL}/api/deployments/${detail.deploymentId}/diagnose`, { method: 'POST' })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(setDiagnosis)
+      .catch((err) => console.error('Diagnosis failed:', err))
+      .finally(() => setDiagnosing(false));
+  };
+
   return (
     <div className="aws-panel mt-4">
       <div className="aws-panel-header flex items-center justify-between">
         <span>Deployment: {detail.deploymentId.slice(0, 12)}...</span>
-        <span className={getStatusBadge(detail.status)}>{detail.status}</span>
+        <div className="flex items-center gap-2">
+          <span className={getStatusBadge(detail.status)}>{detail.status}</span>
+          {detail.status === 'Failed' && (
+            <button
+              onClick={handleAnalyze}
+              disabled={diagnosing}
+              className="px-3 py-1 text-xs font-semibold bg-aws-orange text-white rounded hover:bg-orange-600 disabled:opacity-50"
+            >
+              {diagnosing ? 'Analyzing...' : '🔍 Analyze'}
+            </button>
+          )}
+        </div>
       </div>
       <div className="aws-panel-body space-y-4">
         {/* Overview */}
@@ -137,6 +172,33 @@ function DeploymentDetailPanel({ detail }: { detail: DeploymentDetail }) {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Diagnosis Result */}
+        {diagnosing && (
+          <div className="p-4 bg-orange-50 border border-orange-200 rounded flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-aws-orange border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-aws-text">Analyzing deployment failure with MCP servers...</span>
+          </div>
+        )}
+        {diagnosis && (
+          <div className="space-y-3 p-4 bg-blue-50 border border-blue-200 rounded">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-blue-700 uppercase">Diagnosis</span>
+              <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800">
+                {diagnosis.root_cause_category}
+              </span>
+            </div>
+            <p className="text-sm text-aws-text">{diagnosis.root_cause_description}</p>
+            <div>
+              <span className="text-xs font-bold text-aws-text-secondary">Affected Resource: </span>
+              <code className="text-xs font-mono">{diagnosis.affected_resource}</code>
+            </div>
+            <div>
+              <span className="text-xs font-bold text-aws-text-secondary">Recommended Fix:</span>
+              <p className="text-sm mt-1 whitespace-pre-wrap">{diagnosis.recommended_fix}</p>
             </div>
           </div>
         )}

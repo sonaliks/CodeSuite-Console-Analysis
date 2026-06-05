@@ -387,3 +387,64 @@ async def get_build_project(project_name: str):
         "created": str(proj.get("created", "")),
         "builds": builds,
     }
+
+
+# ─── CodeDeploy Diagnosis ───────────────────────────────────────────────────────
+
+
+@router.post("/deployments/{deployment_id}/diagnose")
+async def diagnose_deployment(deployment_id: str) -> DiagnosisResponse:
+    """Trigger diagnosis of a failed CodeDeploy deployment."""
+    from agent import diagnose_deployment_failure
+
+    client = _get_codedeploy_client()
+    try:
+        response = client.get_deployment(deploymentId=deployment_id)
+        dep = response.get("deploymentInfo", {})
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"Deployment '{deployment_id}' not found")
+
+    try:
+        diagnosis = await diagnose_deployment_failure(
+            deployment_id=deployment_id,
+            application_name=dep.get("applicationName", ""),
+            deployment_group=dep.get("deploymentGroupName", ""),
+            status=dep.get("status", ""),
+            error_info=dep.get("errorInformation", {}),
+        )
+        return diagnosis
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Diagnosis failed: {str(e)}")
+
+
+# ─── CodeBuild Diagnosis ────────────────────────────────────────────────────────
+
+
+@router.post("/build-projects/{project_name}/builds/{build_id}/diagnose")
+async def diagnose_build(project_name: str, build_id: str) -> DiagnosisResponse:
+    """Trigger diagnosis of a failed CodeBuild build."""
+    from agent import diagnose_build_failure
+
+    client = _get_codebuild_client()
+    try:
+        response = client.batch_get_builds(ids=[build_id])
+        builds = response.get("builds", [])
+        if not builds:
+            raise HTTPException(status_code=404, detail=f"Build '{build_id}' not found")
+        build = builds[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get build: {str(e)}")
+
+    try:
+        diagnosis = await diagnose_build_failure(
+            project_name=project_name,
+            build_id=build_id,
+            status=build.get("buildStatus", ""),
+            phases=build.get("phases", []),
+            logs=build.get("logs", {}),
+        )
+        return diagnosis
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Diagnosis failed: {str(e)}")
