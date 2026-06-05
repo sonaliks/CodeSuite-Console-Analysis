@@ -14,6 +14,9 @@ from handlers import (
     get_deployment_info,
     get_deployment_targets,
     list_deployments_for_group,
+    get_build_info,
+    get_build_logs,
+    list_builds_for_project,
 )
 
 
@@ -194,6 +197,68 @@ async def handle_list_tools() -> list[Tool]:
                 "required": ["application_name", "deployment_group_name"],
             },
         ),
+        Tool(
+            name="get_build_info",
+            description=(
+                "Get detailed information about a CodeBuild build including status, "
+                "build phases with error messages, environment configuration, "
+                "service role, and log locations."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "build_id": {
+                        "type": "string",
+                        "description": "The full CodeBuild build ID (e.g., project-name:build-uuid)",
+                    },
+                },
+                "required": ["build_id"],
+            },
+        ),
+        Tool(
+            name="get_build_logs",
+            description=(
+                "Get the CloudWatch build logs for a CodeBuild build. "
+                "Returns the last N lines of build output. Use this to read "
+                "error messages, test failures, and build commands that failed."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "build_id": {
+                        "type": "string",
+                        "description": "The full CodeBuild build ID",
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "description": "Maximum number of log lines to return (default: 100)",
+                        "default": 100,
+                    },
+                },
+                "required": ["build_id"],
+            },
+        ),
+        Tool(
+            name="list_builds_for_project",
+            description=(
+                "List recent builds for a CodeBuild project with their statuses and initiators."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_name": {
+                        "type": "string",
+                        "description": "The CodeBuild project name",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum results to return (default: 5)",
+                        "default": 5,
+                    },
+                },
+                "required": ["project_name"],
+            },
+        ),
     ]
 
 
@@ -238,6 +303,20 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = await list_deployments_for_group(
                 application_name=arguments["application_name"],
                 deployment_group_name=arguments["deployment_group_name"],
+                max_results=arguments.get("max_results", 5),
+            )
+        elif name == "get_build_info":
+            result = await get_build_info(
+                build_id=arguments["build_id"],
+            )
+        elif name == "get_build_logs":
+            result = await get_build_logs(
+                build_id=arguments["build_id"],
+                max_lines=arguments.get("max_lines", 100),
+            )
+        elif name == "list_builds_for_project":
+            result = await list_builds_for_project(
+                project_name=arguments["project_name"],
                 max_results=arguments.get("max_results", 5),
             )
         else:

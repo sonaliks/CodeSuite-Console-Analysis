@@ -431,3 +431,176 @@ async def list_deployments_for_group(application_name: str, deployment_group_nam
 
     except ClientError as e:
         raise ValueError(f"AWS CodeDeploy error: {e.response['Error']['Message']}")
+
+
+# ─── CodeBuild Handlers ─────────────────────────────────────────────────────────
+
+
+def _get_codebuild_client():
+    """Create a boto3 CodeBuild client."""
+    return boto3.client("codebuild")
+
+
+async def get_build_info(build_id: str) -> dict:
+    """
+    Get detailed information about a CodeBuild build including status,
+    phases, error messages, environment, and log locations.
+
+    Args:
+        build_id: The full build ID (e.g., project-name:build-uuid).
+
+    Returns:
+        Dictionary with build details.
+    """
+    client = _get_codebuild_client()
+
+    try:
+        response = client.batch_get_builds(ids=[build_id])
+        builds = response.get("builds", [])
+
+        if not builds:
+            raise ValueError(f"Build '{build_id}' not found.")
+
+        b = builds[0]
+        phases = []
+        for phase in b.get("phases", []):
+            phase_data = {
+                "phase_type": phase.get("phaseType", ""),
+                "status": phase.get("phaseStatus", ""),
+                "duration_seconds": phase.get("durationInSeconds", 0),
+                "start_time": str(phase.get("startTime", "")),
+                "end_time": str(phase.get("endTime", "")),
+            }
+            contexts = phase.get("contexts", [])
+            if contexts:
+                phase_data["error_message"] = contexts[0].get("message", "")
+                phase_data["status_code"] = contexts[0].get("statusCode", "")
+            phases.append(phase_data)
+
+        return {
+            "build_id": b.get("id", ""),
+            "project_name": b.get("projectName", ""),
+            "build_number": b.get("buildNumber", 0),
+            "status": b.get("buildStatus", "Unknown"),
+            "start_time": str(b.get("startTime", "")),
+            "end_time": str(b.get("endTime", "")),
+            "source_version": b.get("sourceVersion", ""),
+            "initiator": b.get("initiator", ""),
+            "environment": {
+                "type": b.get("environment", {}).get("type", ""),
+                "compute_type": b.get("environment", {}).get("computeType", ""),
+                "image": b.get("environment", {}).get("image", ""),
+            },
+            "logs": {
+                "group_name": b.get("logs", {}).get("groupName", ""),
+                "stream_name": b.get("logs", {}).get("streamName", ""),
+                "deep_link": b.get("logs", {}).get("deepLink", ""),
+            },
+            "phases": phases,
+            "service_role": b.get("serviceRole", ""),
+        }
+
+    except ClientError as e:
+        raise ValueError(f"AWS CodeBuild error: {e.response['Error']['Message']}")
+
+
+async def get_build_logs(build_id: str, max_lines: int = 100) -> dict:
+    """
+    Get the CloudWatch build logs for a CodeBuild build.
+    Returns the last N lines of the build log output.
+
+    Args:
+        build_id: The full build ID.
+        max_lines: Maximum number of log lines to return (default: 100).
+
+    Returns:
+        Dictionary with log content.
+    """
+    client = _get_codebuild_client()
+    logs_client = boto3.client("logs")
+
+    try:
+        response = client.batch_get_builds(ids=[build_id])
+        builds = response.get("builds", [])
+
+        if not builds:
+            raise ValueError(f"Build '{build_id}' not found.")
+
+        b = builds[0]
+        log_group = b.get("logs", {}).get("groupName", "")
+        log_stream = b.get("logs", {}).get("streamName", "")
+
+        if not log_group or not log_stream:
+            return {
+                "build_id": build_id,
+                "log_group": log_group,
+                "log_stream": log_stream,
+                "lines": [],
+                "message": "No logs available for this build.",
+            }
+
+        # Get log events
+        log_response = logs_client.get_log_events(
+            logGroupName=log_group,
+            logStreamName=log_stream,
+            startFromHead=False,
+            limit=max_lines,
+        )
+
+        lines = [evt.get("message", "") for evt in log_response.get("events", [])]
+
+        return {
+            "build_id": build_id,
+            "log_group": log_group,
+            "log_stream": log_stream,
+            "lines": lines,
+        }
+
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == "ResourceNotFoundException":
+            return {
+                "build_id": build_id,
+                "lines": [],
+                "message": f"Log group or stream not found. The logs may have expired.",
+            }
+        raise ValueError(f"AWS error: {e.response['Error']['Message']}")
+
+
+async def list_builds_for_project(project_name: str, max_results: int = 5) -> dict:
+    """
+    List recent builds for a CodeBuild project with their statuses.
+
+    Args:
+        project_name: The CodeBuild project name.
+        max_results: Maximum results to return.
+
+    Returns:
+        Dictionary with recent builds.
+    """
+    client = _get_codebuild_client()
+
+    try:
+        response = client.list_builds_for_project(
+            projectName=project_name, sortOrder="DESCENDING"
+        )
+        build_ids = response.get("ids", [])[:max_results]
+
+        if not build_ids:
+            return {"project_name": project_name, "builds": []}
+
+        builds_detail = client.batch_get_builds(ids=build_ids)
+        builds = []
+        for b in builds_detail.get("builds", []):
+            builds.append({
+                "build_id": b.get("id", ""),
+                "build_number": b.get("buildNumber", 0),
+                "status": b.get("buildStatus", "Unknown"),
+                "start_time": str(b.get("startTime", "")),
+                "initiator": b.get("initiator", ""),
+            })
+
+        return {"project_name": project_name, "builds": builds}
+
+    except ClientError as e:
+        raise ValueError(f"AWS CodeBuild error: {e.response['Error']['Message']}")
