@@ -5,6 +5,7 @@ import type { AnalysisState, RootCauseCategory, ToolInvocationStep } from '../ty
 const TOOL_TO_SERVER: Record<string, { name: string; description: string }> = {
   get_pipeline_state: { name: 'CodePipeline MCP', description: 'Custom - Pipeline state & actions' },
   get_pipeline_execution: { name: 'CodePipeline MCP', description: 'Custom - Pipeline state & actions' },
+  get_pipeline_configuration: { name: 'CodePipeline MCP', description: 'Custom - Pipeline state & actions' },
   get_action_execution_details: { name: 'CodePipeline MCP', description: 'Custom - Pipeline state & actions' },
   list_pipeline_executions: { name: 'CodePipeline MCP', description: 'Custom - Pipeline state & actions' },
   list_files: { name: 'CodeCommit MCP', description: 'Custom - Repository file access' },

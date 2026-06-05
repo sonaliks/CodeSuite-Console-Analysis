@@ -10,6 +10,7 @@ from handlers import (
     get_pipeline_execution,
     get_action_execution_details,
     list_pipeline_executions,
+    get_pipeline_configuration,
 )
 
 
@@ -109,6 +110,25 @@ async def handle_list_tools() -> list[Tool]:
                 "required": ["pipeline_name"],
             },
         ),
+        Tool(
+            name="get_pipeline_configuration",
+            description=(
+                "Get the pipeline definition including source repository names, "
+                "action configurations, build project names, deploy targets, and "
+                "the pipeline's IAM role ARN. Use this to find repository names, "
+                "service roles, and action-specific configurations."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pipeline_name": {
+                        "type": "string",
+                        "description": "The name of the CodePipeline",
+                    },
+                },
+                "required": ["pipeline_name"],
+            },
+        ),
     ]
 
 
@@ -136,6 +156,10 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = await list_pipeline_executions(
                 pipeline_name=arguments["pipeline_name"],
                 max_results=arguments.get("max_results", 5),
+            )
+        elif name == "get_pipeline_configuration":
+            result = await get_pipeline_configuration(
+                pipeline_name=arguments["pipeline_name"],
             )
         else:
             result = {"error": f"Unknown tool: {name}"}

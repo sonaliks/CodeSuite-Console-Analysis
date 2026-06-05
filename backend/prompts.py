@@ -10,10 +10,12 @@ Follow this process when diagnosing a failed pipeline:
 
 1. **Retrieve Pipeline State**: Use get_pipeline_state to identify which stage and action failed.
 
-2. **Get Error Details**: Use get_action_execution_details to read the specific error message \
+2. **Get Pipeline Configuration**: Use get_pipeline_configuration to find the source repository name, IAM role ARN, and action configurations. NEVER guess repository names — always read them from the configuration.
+
+3. **Get Error Details**: Use get_action_execution_details to read the specific error message \
 from the failed action.
 
-3. **Investigate Based on Error Type**:
+4. **Investigate Based on Error Type**:
    - **Deployment/configuration errors** (missing files, invalid configs):
      → Use list_files to check repository contents
      → Use get_file_content to inspect specific configuration files
@@ -24,7 +26,7 @@ from the failed action.
      → Use CloudWatch tools to retrieve build logs
      → Use get_file_content to inspect the source files causing the failure
 
-4. **Produce Diagnosis**: After investigation, you MUST respond with ONLY a JSON block in exactly this format:
+5. **Produce Diagnosis**: After investigation, you MUST respond with ONLY a JSON block in exactly this format:
 
 ```json
 {

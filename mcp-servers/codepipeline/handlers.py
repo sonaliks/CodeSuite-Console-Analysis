@@ -222,3 +222,54 @@ async def list_pipeline_executions(pipeline_name: str, max_results: int = 5) -> 
             )
         else:
             raise ValueError(f"AWS CodePipeline error: {e.response['Error']['Message']}")
+
+
+async def get_pipeline_configuration(pipeline_name: str) -> dict:
+    """
+    Get the pipeline definition/configuration including source repository names,
+    action configurations, and role ARNs.
+
+    Args:
+        pipeline_name: The name of the CodePipeline.
+
+    Returns:
+        Dictionary with pipeline configuration details including stages,
+        actions, and their configurations (source repos, build projects, etc).
+    """
+    client = _get_client()
+
+    try:
+        response = client.get_pipeline(name=pipeline_name)
+        pipeline = response.get("pipeline", {})
+
+        stages = []
+        for stage in pipeline.get("stages", []):
+            actions = []
+            for action in stage.get("actions", []):
+                actions.append({
+                    "action_name": action.get("name"),
+                    "category": action.get("actionTypeId", {}).get("category"),
+                    "provider": action.get("actionTypeId", {}).get("provider"),
+                    "configuration": action.get("configuration", {}),
+                })
+            stages.append({
+                "stage_name": stage.get("name"),
+                "actions": actions,
+            })
+
+        return {
+            "pipeline_name": pipeline_name,
+            "role_arn": pipeline.get("roleArn", ""),
+            "artifact_store": pipeline.get("artifactStore", {}),
+            "stages": stages,
+        }
+
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == "PipelineNotFoundException":
+            raise ValueError(
+                f"Pipeline '{pipeline_name}' does not exist. "
+                "Please verify the pipeline name and try again."
+            )
+        else:
+            raise ValueError(f"AWS CodePipeline error: {e.response['Error']['Message']}")
