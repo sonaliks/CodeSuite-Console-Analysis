@@ -51,6 +51,7 @@ from the failed action.
 ## Important Guidelines
 
 - Always start by getting the pipeline state before diving deeper
+- For CodeDeploy failures, use get_deployment_info and get_deployment_targets to inspect instance-level errors and lifecycle events
 - Be specific about which permission is missing or which file is absent
 - Provide copy-pasteable fixes when possible (IAM policy JSON, file contents, etc.)
 - Reference the exact error messages you found in your evidence

@@ -11,6 +11,9 @@ from handlers import (
     get_action_execution_details,
     list_pipeline_executions,
     get_pipeline_configuration,
+    get_deployment_info,
+    get_deployment_targets,
+    list_deployments_for_group,
 )
 
 
@@ -129,6 +132,68 @@ async def handle_list_tools() -> list[Tool]:
                 "required": ["pipeline_name"],
             },
         ),
+        Tool(
+            name="get_deployment_info",
+            description=(
+                "Get detailed information about a CodeDeploy deployment including "
+                "status, error information, deployment overview, revision details, "
+                "and compute platform."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "deployment_id": {
+                        "type": "string",
+                        "description": "The CodeDeploy deployment ID (e.g., d-XXXXXXXXX)",
+                    },
+                },
+                "required": ["deployment_id"],
+            },
+        ),
+        Tool(
+            name="get_deployment_targets",
+            description=(
+                "Get the targets (EC2 instances or ECS tasks) for a CodeDeploy deployment "
+                "with their lifecycle event statuses, error diagnostics, log tails, "
+                "and script names. Use this to find why specific instances failed."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "deployment_id": {
+                        "type": "string",
+                        "description": "The CodeDeploy deployment ID",
+                    },
+                },
+                "required": ["deployment_id"],
+            },
+        ),
+        Tool(
+            name="list_deployments_for_group",
+            description=(
+                "List recent deployments for a specific CodeDeploy application and "
+                "deployment group, including their statuses and error information."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "application_name": {
+                        "type": "string",
+                        "description": "The CodeDeploy application name",
+                    },
+                    "deployment_group_name": {
+                        "type": "string",
+                        "description": "The deployment group name",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum results to return (default: 5)",
+                        "default": 5,
+                    },
+                },
+                "required": ["application_name", "deployment_group_name"],
+            },
+        ),
     ]
 
 
@@ -160,6 +225,20 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         elif name == "get_pipeline_configuration":
             result = await get_pipeline_configuration(
                 pipeline_name=arguments["pipeline_name"],
+            )
+        elif name == "get_deployment_info":
+            result = await get_deployment_info(
+                deployment_id=arguments["deployment_id"],
+            )
+        elif name == "get_deployment_targets":
+            result = await get_deployment_targets(
+                deployment_id=arguments["deployment_id"],
+            )
+        elif name == "list_deployments_for_group":
+            result = await list_deployments_for_group(
+                application_name=arguments["application_name"],
+                deployment_group_name=arguments["deployment_group_name"],
+                max_results=arguments.get("max_results", 5),
             )
         else:
             result = {"error": f"Unknown tool: {name}"}
