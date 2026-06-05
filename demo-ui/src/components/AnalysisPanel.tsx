@@ -1,6 +1,47 @@
 import type React from 'react';
 import type { AnalysisState, RootCauseCategory, ToolInvocationStep } from '../types';
 
+/** Map tool names to their MCP server */
+const TOOL_TO_SERVER: Record<string, { name: string; description: string }> = {
+  get_pipeline_state: { name: 'CodePipeline MCP', description: 'Custom - Pipeline state & actions' },
+  get_pipeline_execution: { name: 'CodePipeline MCP', description: 'Custom - Pipeline state & actions' },
+  get_action_execution_details: { name: 'CodePipeline MCP', description: 'Custom - Pipeline state & actions' },
+  list_pipeline_executions: { name: 'CodePipeline MCP', description: 'Custom - Pipeline state & actions' },
+  list_files: { name: 'CodeCommit MCP', description: 'Custom - Repository file access' },
+  get_file_content: { name: 'CodeCommit MCP', description: 'Custom - Repository file access' },
+  get_repository_metadata: { name: 'CodeCommit MCP', description: 'Custom - Repository file access' },
+  get_role: { name: 'IAM MCP (AWS Labs)', description: 'Pre-built - IAM policy inspection' },
+  get_role_policy: { name: 'IAM MCP (AWS Labs)', description: 'Pre-built - IAM policy inspection' },
+  list_attached_role_policies: { name: 'IAM MCP (AWS Labs)', description: 'Pre-built - IAM policy inspection' },
+  get_policy_version: { name: 'IAM MCP (AWS Labs)', description: 'Pre-built - IAM policy inspection' },
+  get_log_events: { name: 'CloudWatch MCP (AWS Labs)', description: 'Pre-built - Log retrieval' },
+  filter_log_events: { name: 'CloudWatch MCP (AWS Labs)', description: 'Pre-built - Log retrieval' },
+  describe_log_groups: { name: 'CloudWatch MCP (AWS Labs)', description: 'Pre-built - Log retrieval' },
+};
+
+function getServerForTool(toolName: string): string {
+  const server = TOOL_TO_SERVER[toolName];
+  if (server) return server.name;
+  if (toolName.includes('pipeline') || toolName.includes('execution')) return 'CodePipeline MCP';
+  if (toolName.includes('file') || toolName.includes('repo') || toolName.includes('commit')) return 'CodeCommit MCP';
+  if (toolName.includes('iam') || toolName.includes('role') || toolName.includes('policy')) return 'IAM MCP (AWS Labs)';
+  if (toolName.includes('log') || toolName.includes('cloudwatch')) return 'CloudWatch MCP (AWS Labs)';
+  return 'MCP Server';
+}
+
+function getUniqueServers(toolNames: string[]): Array<{ name: string; description: string }> {
+  const seen = new Set<string>();
+  const servers: Array<{ name: string; description: string }> = [];
+  for (const tool of toolNames) {
+    const server = TOOL_TO_SERVER[tool] || { name: getServerForTool(tool), description: 'Tool provider' };
+    if (!seen.has(server.name)) {
+      seen.add(server.name);
+      servers.push(server);
+    }
+  }
+  return servers;
+}
+
 interface AnalysisPanelProps {
   analysis: AnalysisState;
 }
@@ -341,12 +382,40 @@ export function AnalysisPanel({ analysis }: AnalysisPanelProps) {
                         {index + 1}
                       </span>
                       <div className="min-w-0">
-                        <span className="text-xs font-semibold text-aws-text-secondary uppercase tracking-wide">
-                          {item.source}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-aws-text-secondary uppercase tracking-wide">
+                            {item.source}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-medium">
+                            {getServerForTool(item.source)}
+                          </span>
+                        </div>
                         <p className="text-sm text-aws-text mt-0.5 leading-relaxed">
                           {item.finding}
                         </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* MCP Servers Used */}
+            {analysis.result.evidence && analysis.result.evidence.length > 0 && (
+              <div>
+                <label className="text-xs font-bold text-aws-text-secondary uppercase tracking-wide">
+                  MCP Servers Used
+                </label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {getUniqueServers(analysis.result.evidence.map(e => e.source)).map((server) => (
+                    <div
+                      key={server.name}
+                      className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-md"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-indigo-500" />
+                      <div>
+                        <div className="text-xs font-semibold text-indigo-800">{server.name}</div>
+                        <div className="text-[10px] text-indigo-600">{server.description}</div>
                       </div>
                     </div>
                   ))}
