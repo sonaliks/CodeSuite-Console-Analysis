@@ -25,6 +25,14 @@ def _get_codepipeline_client():
     return boto3.client("codepipeline", region_name="us-east-1")
 
 
+def _get_codedeploy_client():
+    return boto3.client("codedeploy", region_name="us-east-1")
+
+
+def _get_codebuild_client():
+    return boto3.client("codebuild", region_name="us-east-1")
+
+
 def _fetch_pipeline_state(pipeline_name: str) -> dict:
     """Fetch live pipeline state from AWS."""
     client = _get_codepipeline_client()
@@ -150,3 +158,232 @@ async def diagnose_execution(pipeline_name: str, execution_id: str) -> Diagnosis
         return diagnosis
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Diagnosis failed: {str(e)}")
+
+
+# ─── CodeDeploy Endpoints ───────────────────────────────────────────────────────
+
+
+@router.get("/deployments")
+async def list_deployments():
+    """List recent CodeDeploy deployments."""
+    client = _get_codedeploy_client()
+
+    try:
+        response = client.list_deployments(
+            includeOnlyStatuses=["Failed", "Succeeded", "InProgress", "Stopped"],
+        )
+        deployment_ids = response.get("deployments", [])[:20]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list deployments: {str(e)}")
+
+    if not deployment_ids:
+        return []
+
+    try:
+        batch_response = client.batch_get_deployments(deploymentIds=deployment_ids)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get deployment details: {str(e)}")
+
+    deployments = []
+    for dep in batch_response.get("deploymentsInfo", []):
+        deployments.append({
+            "deploymentId": dep.get("deploymentId", ""),
+            "applicationName": dep.get("applicationName", ""),
+            "deploymentGroupName": dep.get("deploymentGroupName", ""),
+            "status": dep.get("status", "Unknown"),
+            "createTime": str(dep.get("createTime", "")),
+            "completeTime": str(dep.get("completeTime", "")),
+            "description": dep.get("description", ""),
+            "errorInformation": dep.get("errorInformation", {}),
+        })
+
+    return deployments
+
+
+# ─── CodeBuild Endpoints ────────────────────────────────────────────────────────
+
+
+@router.get("/build-projects")
+async def list_build_projects():
+    """List CodeBuild projects with their latest build status."""
+    client = _get_codebuild_client()
+
+    try:
+        response = client.list_projects(sortBy="NAME", sortOrder="ASCENDING")
+        project_names = response.get("projects", [])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list build projects: {str(e)}")
+
+    if not project_names:
+        return []
+
+    try:
+        batch_response = client.batch_get_projects(names=project_names)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get project details: {str(e)}")
+
+    projects = []
+    for proj in batch_response.get("projects", []):
+        latest_build = None
+        # Get the latest build for this project
+        try:
+            builds_response = client.list_builds_for_project(
+                projectName=proj["name"], sortOrder="DESCENDING"
+            )
+            build_ids = builds_response.get("ids", [])[:1]
+            if build_ids:
+                build_detail = client.batch_get_builds(ids=build_ids)
+                builds = build_detail.get("builds", [])
+                if builds:
+                    b = builds[0]
+                    latest_build = {
+                        "buildId": b.get("id", ""),
+                        "status": b.get("buildStatus", "Unknown"),
+                        "startTime": str(b.get("startTime", "")),
+                        "endTime": str(b.get("endTime", "")),
+                        "duration": str(b.get("endTime", 0)),
+                    }
+        except Exception:
+            pass
+
+        projects.append({
+            "name": proj.get("name", ""),
+            "arn": proj.get("arn", ""),
+            "description": proj.get("description", ""),
+            "source": proj.get("source", {}).get("type", ""),
+            "lastModified": str(proj.get("lastModified", "")),
+            "latestBuild": latest_build,
+        })
+
+    return projects
+
+
+@router.get("/deployments/{deployment_id}")
+async def get_deployment(deployment_id: str):
+    """Get detailed information about a specific deployment."""
+    client = _get_codedeploy_client()
+
+    try:
+        response = client.get_deployment(deploymentId=deployment_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Deployment not found: {str(e)}")
+
+    dep = response.get("deploymentInfo", {})
+
+    # Get deployment target instances
+    instances = []
+    try:
+        targets_response = client.list_deployment_targets(deploymentId=deployment_id)
+        target_ids = targets_response.get("targetIds", [])
+        if target_ids:
+            targets_detail = client.batch_get_deployment_targets(
+                deploymentId=deployment_id, targetIds=target_ids[:10]
+            )
+            for target in targets_detail.get("deploymentTargets", []):
+                instance_target = target.get("instanceTarget") or target.get("ecsTarget") or {}
+                lifecycle_events = instance_target.get("lifecycleEvents", [])
+                instances.append({
+                    "targetId": target.get("deploymentTargetType", "Unknown"),
+                    "status": instance_target.get("status", "Unknown"),
+                    "lifecycleEvents": [
+                        {
+                            "name": evt.get("lifecycleEventName", ""),
+                            "status": evt.get("status", "Unknown"),
+                            "startTime": str(evt.get("startTime", "")),
+                            "endTime": str(evt.get("endTime", "")),
+                            "diagnostics": evt.get("diagnostics", {}),
+                        }
+                        for evt in lifecycle_events
+                    ],
+                })
+    except Exception:
+        pass
+
+    return {
+        "deploymentId": dep.get("deploymentId", ""),
+        "applicationName": dep.get("applicationName", ""),
+        "deploymentGroupName": dep.get("deploymentGroupName", ""),
+        "status": dep.get("status", "Unknown"),
+        "createTime": str(dep.get("createTime", "")),
+        "completeTime": str(dep.get("completeTime", "")),
+        "description": dep.get("description", ""),
+        "revision": dep.get("revision", {}),
+        "errorInformation": dep.get("errorInformation", {}),
+        "deploymentOverview": dep.get("deploymentOverview", {}),
+        "computePlatform": dep.get("computePlatform", ""),
+        "creator": dep.get("creator", ""),
+        "targets": instances,
+    }
+
+
+@router.get("/build-projects/{project_name}")
+async def get_build_project(project_name: str):
+    """Get detailed information about a specific build project and its recent builds."""
+    client = _get_codebuild_client()
+
+    try:
+        response = client.batch_get_projects(names=[project_name])
+        projects = response.get("projects", [])
+        if not projects:
+            raise HTTPException(status_code=404, detail=f"Project '{project_name}' not found")
+        proj = projects[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get project: {str(e)}")
+
+    # Get recent builds
+    builds = []
+    try:
+        builds_response = client.list_builds_for_project(
+            projectName=project_name, sortOrder="DESCENDING"
+        )
+        build_ids = builds_response.get("ids", [])[:10]
+        if build_ids:
+            builds_detail = client.batch_get_builds(ids=build_ids)
+            for b in builds_detail.get("builds", []):
+                phases = [
+                    {
+                        "name": phase.get("phaseType", ""),
+                        "status": phase.get("phaseStatus", ""),
+                        "duration": phase.get("durationInSeconds", 0),
+                    }
+                    for phase in b.get("phases", [])
+                ]
+                builds.append({
+                    "buildId": b.get("id", ""),
+                    "buildNumber": b.get("buildNumber", 0),
+                    "status": b.get("buildStatus", "Unknown"),
+                    "startTime": str(b.get("startTime", "")),
+                    "endTime": str(b.get("endTime", "")),
+                    "sourceVersion": b.get("sourceVersion", ""),
+                    "initiator": b.get("initiator", ""),
+                    "phases": phases,
+                    "logs": {
+                        "groupName": b.get("logs", {}).get("groupName", ""),
+                        "streamName": b.get("logs", {}).get("streamName", ""),
+                        "deepLink": b.get("logs", {}).get("deepLink", ""),
+                    },
+                })
+    except Exception:
+        pass
+
+    return {
+        "name": proj.get("name", ""),
+        "arn": proj.get("arn", ""),
+        "description": proj.get("description", ""),
+        "source": {
+            "type": proj.get("source", {}).get("type", ""),
+            "location": proj.get("source", {}).get("location", ""),
+            "buildspec": proj.get("source", {}).get("buildspec", ""),
+        },
+        "environment": {
+            "type": proj.get("environment", {}).get("type", ""),
+            "computeType": proj.get("environment", {}).get("computeType", ""),
+            "image": proj.get("environment", {}).get("image", ""),
+        },
+        "serviceRole": proj.get("serviceRole", ""),
+        "lastModified": str(proj.get("lastModified", "")),
+        "created": str(proj.get("created", "")),
+        "builds": builds,
+    }

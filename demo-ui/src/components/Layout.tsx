@@ -1,10 +1,26 @@
 import type { ReactNode } from 'react';
 
+export type NavPage = 'pipeline' | 'codedeploy' | 'codebuild';
+
 interface LayoutProps {
   children: ReactNode;
+  activePage: NavPage;
+  onNavigate: (page: NavPage) => void;
 }
 
-export function Layout({ children }: LayoutProps) {
+const NAV_ITEMS: { id: NavPage; label: string }[] = [
+  { id: 'pipeline', label: 'CodePipeline' },
+  { id: 'codedeploy', label: 'CodeDeploy' },
+  { id: 'codebuild', label: 'CodeBuild' },
+];
+
+const PAGE_TITLES: Record<NavPage, string> = {
+  pipeline: 'CodePipeline',
+  codedeploy: 'CodeDeploy',
+  codebuild: 'CodeBuild',
+};
+
+export function Layout({ children, activePage, onNavigate }: LayoutProps) {
   return (
     <div className="flex h-screen overflow-hidden font-aws">
       {/* Sidebar Navigation */}
@@ -18,31 +34,25 @@ export function Layout({ children }: LayoutProps) {
           <p className="text-gray-400 text-aws-small mt-0.5">Diagnostics Demo</p>
         </div>
 
-        {/* Navigation Items - compact spacing matching AWS console */}
+        {/* Navigation Items */}
         <ul className="flex-1 py-1" role="list">
+          {NAV_ITEMS.map((item) => (
+            <li key={item.id}>
+              <button
+                onClick={() => onNavigate(item.id)}
+                className={`aws-nav-item block text-sm w-full text-left ${
+                  activePage === item.id ? 'active' : ''
+                }`}
+                aria-current={activePage === item.id ? 'page' : undefined}
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
           <li>
-            <a
-              href="#"
-              className="aws-nav-item active block text-sm"
-              aria-current="page"
-            >
-              CodePipeline
-            </a>
-          </li>
-          <li>
-            <a href="#" className="aws-nav-item block text-sm">
+            <span className="aws-nav-item block text-sm opacity-50 cursor-default">
               CodeCommit
-            </a>
-          </li>
-          <li>
-            <a href="#" className="aws-nav-item block text-sm">
-              CodeDeploy
-            </a>
-          </li>
-          <li>
-            <a href="#" className="aws-nav-item block text-sm">
-              CodeBuild
-            </a>
+            </span>
           </li>
         </ul>
 
@@ -58,7 +68,9 @@ export function Layout({ children }: LayoutProps) {
         <header className="bg-white border-b border-aws-border px-6 py-2.5 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <span className="inline-block w-1 h-5 bg-aws-orange rounded-aws-sm" aria-hidden="true"></span>
-            <h2 className="text-lg font-bold text-aws-text leading-tight">CodePipeline</h2>
+            <h2 className="text-lg font-bold text-aws-text leading-tight">
+              {PAGE_TITLES[activePage]}
+            </h2>
           </div>
           <div className="text-sm text-aws-text-secondary">
             us-east-1

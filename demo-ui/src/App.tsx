@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { Layout } from './components/Layout';
+import type { NavPage } from './components/Layout';
 import { PipelineList } from './components/PipelineList';
 import { PipelineDetail } from './components/PipelineDetail';
 import { AnalysisPanel } from './components/AnalysisPanel';
+import { DeploymentList } from './components/DeploymentList';
+import { BuildProjectList } from './components/BuildProjectList';
 import { getPipelineDetail, triggerDiagnosis } from './api/client';
 import type { PipelineDetail as PipelineDetailType, AnalysisState, ToolInvocationStep } from './types';
 
@@ -16,6 +19,7 @@ const DEFAULT_TOOL_STEPS: ToolInvocationStep[] = [
 ];
 
 function App() {
+  const [activePage, setActivePage] = useState<NavPage>('pipeline');
   const [selectedPipeline, setSelectedPipeline] = useState<string>();
   const [pipelineDetail, setPipelineDetail] = useState<PipelineDetailType | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisState>({
@@ -32,7 +36,6 @@ function App() {
       setPipelineDetail(detail);
     } catch (err) {
       console.error('Failed to fetch pipeline detail:', err);
-      // Show a minimal detail so the user can still trigger analysis
       setPipelineDetail({
         name,
         stages: [
@@ -82,34 +85,57 @@ function App() {
   };
 
   return (
-    <Layout>
-      <div className="p-6 space-y-6">
-        <header className="mb-4">
-          <h2 className="text-xl font-bold text-aws-text">CodePipeline</h2>
-          <p className="text-sm text-aws-text-secondary">
-            Monitor and diagnose pipeline failures
-          </p>
-        </header>
+    <Layout activePage={activePage} onNavigate={setActivePage}>
+      {activePage === 'pipeline' && (
+        <div className="space-y-6">
+          <header className="mb-4">
+            <h2 className="text-xl font-bold text-aws-text">Pipelines</h2>
+            <p className="text-sm text-aws-text-secondary">
+              Monitor and diagnose pipeline failures
+            </p>
+          </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Pipeline List */}
-          <div className="lg:col-span-1">
-            <PipelineList
-              onSelect={handleSelectPipeline}
-              selectedPipeline={selectedPipeline}
-            />
-          </div>
-
-          {/* Pipeline Detail + Analysis */}
-          <div className="lg:col-span-2 space-y-6">
-            <PipelineDetail
-              pipeline={pipelineDetail}
-              onAnalyze={handleAnalyze}
-            />
-            <AnalysisPanel analysis={analysis} />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1">
+              <PipelineList
+                onSelect={handleSelectPipeline}
+                selectedPipeline={selectedPipeline}
+              />
+            </div>
+            <div className="lg:col-span-2 space-y-6">
+              <PipelineDetail
+                pipeline={pipelineDetail}
+                onAnalyze={handleAnalyze}
+              />
+              <AnalysisPanel analysis={analysis} />
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {activePage === 'codedeploy' && (
+        <div className="space-y-6">
+          <header className="mb-4">
+            <h2 className="text-xl font-bold text-aws-text">Deployments</h2>
+            <p className="text-sm text-aws-text-secondary">
+              View recent CodeDeploy deployments
+            </p>
+          </header>
+          <DeploymentList />
+        </div>
+      )}
+
+      {activePage === 'codebuild' && (
+        <div className="space-y-6">
+          <header className="mb-4">
+            <h2 className="text-xl font-bold text-aws-text">Build Projects</h2>
+            <p className="text-sm text-aws-text-secondary">
+              View CodeBuild projects and their latest build status
+            </p>
+          </header>
+          <BuildProjectList />
+        </div>
+      )}
     </Layout>
   );
 }
