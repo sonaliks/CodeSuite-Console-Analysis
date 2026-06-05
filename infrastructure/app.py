@@ -12,7 +12,7 @@ from stacks.scenario3_stack import Scenario3Stack
 app = cdk.App()
 
 env = cdk.Environment(
-    account=os.environ.get("CDK_DEFAULT_ACCOUNT", "274327307511"),
+    account=os.environ.get("CDK_DEFAULT_ACCOUNT", "REPLACE_WITH_YOUR_ACCOUNT_ID"),
     region=os.environ.get("CDK_DEFAULT_REGION", "us-east-1"),
 )
 

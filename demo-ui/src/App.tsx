@@ -35,10 +35,12 @@ function App() {
       // Show a minimal detail so the user can still trigger analysis
       setPipelineDetail({
         name,
-        stages: ['Source', 'Build'],
-        status: 'Failed',
-        description: '',
-      } as PipelineDetailType);
+        stages: [
+          { name: 'Source', status: 'Failed', actions: [] },
+          { name: 'Build', status: 'Failed', actions: [] },
+        ],
+        executions: [],
+      });
     }
   };
 

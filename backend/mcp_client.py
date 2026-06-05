@@ -152,20 +152,26 @@ class MCPClient:
 
 def get_default_mcp_client() -> MCPClient:
     """Create an MCP client with default server configurations."""
+    import shutil
+    import sys
+
     client = MCPClient()
+
+    # Find the python3 executable
+    python_cmd = shutil.which("python3") or sys.executable
 
     # Custom MCP servers
     mcp_servers_dir = Path(__file__).parent.parent / "mcp-servers"
 
     client.register_server(MCPServerConfig(
         name="codecommit",
-        command="/opt/homebrew/bin/python3.11",
+        command=python_cmd,
         args=[str(mcp_servers_dir / "codecommit" / "server.py")],
     ))
 
     client.register_server(MCPServerConfig(
         name="codepipeline",
-        command="/opt/homebrew/bin/python3.11",
+        command=python_cmd,
         args=[str(mcp_servers_dir / "codepipeline" / "server.py")],
     ))
 

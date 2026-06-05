@@ -85,6 +85,19 @@ class Scenario2Stack(Stack):
             )
         )
 
+        # Explicit DENY on GitPull to override any CDK auto-grants
+        pipeline_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.DENY,
+                actions=[
+                    "codecommit:GitPull",
+                    "codecommit:UploadArchive",
+                    "codecommit:GetUploadArchiveStatus",
+                ],
+                resources=[repo.repository_arn],
+            )
+        )
+
         # CodeBuild project
         build_project = codebuild.PipelineProject(
             self,

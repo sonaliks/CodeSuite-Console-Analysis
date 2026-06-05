@@ -11,7 +11,7 @@ infrastructure/
 │   ├── shared_stack.py       # Shared resources (S3 artifact bucket)
 │   ├── scenario1_stack.py    # Missing appspec.yml scenario (future)
 │   ├── scenario2_stack.py    # Missing IAM permission scenario (future)
-│   └── scenario3_stack.py    # LZA OU mismatch scenario (future)
+│   └── scenario3_stack.py    # ECS deployment failure scenario
 ├── cdk.json                  # CDK configuration
 ├── requirements.txt          # Python dependencies
 └── README.md

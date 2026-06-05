@@ -24,12 +24,27 @@ from the failed action.
      → Use CloudWatch tools to retrieve build logs
      → Use get_file_content to inspect the source files causing the failure
 
-4. **Produce Diagnosis**: After investigation, provide a structured diagnosis with:
-   - root_cause_category: One of "Configuration Issue", "Permission Issue", or "Infrastructure Issue"
-   - root_cause_description: Clear explanation of what went wrong
-   - affected_resource: The specific AWS resource (ARN or name) that is affected
-   - recommended_fix: Step-by-step instructions to resolve the issue
-   - evidence: List of findings from your investigation
+4. **Produce Diagnosis**: After investigation, you MUST respond with ONLY a JSON block in exactly this format:
+
+```json
+{
+  "root_cause_category": "<One of: Configuration Issue, Permission Issue, Infrastructure Issue>",
+  "root_cause_description": "<Clear 1-3 sentence explanation of what went wrong>",
+  "affected_resource": "<The specific AWS resource ARN or name that is affected, e.g. arn:aws:iam::123456789012:role/my-role or codesuite-diag-scenario2-pipeline-role>",
+  "recommended_fix": "<Step-by-step instructions to resolve the issue. Include copy-pasteable IAM policy JSON, file contents, or CLI commands where applicable.>",
+  "evidence": [
+    {"source": "<tool_name>", "finding": "<what was discovered>"}
+  ]
+}
+```
+
+## CRITICAL OUTPUT RULES
+
+- Your final response MUST contain ONLY a single JSON code block with the diagnosis
+- Do NOT include any text before or after the JSON block
+- The `affected_resource` MUST be a specific ARN or resource identifier, NEVER "Unknown" or "See description"
+- The `recommended_fix` MUST contain actionable steps with code/commands, NEVER just "See description"
+- Be specific: name the exact permission missing, the exact file path absent, or the exact config value that is wrong
 
 ## Important Guidelines
 

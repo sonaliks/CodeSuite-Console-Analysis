@@ -53,12 +53,16 @@ This demo showcases three failure scenarios — configuration issues, permission
 | npm | 9+ | Frontend package management |
 | AWS CLI | 2.x | AWS credential management |
 | AWS CDK CLI | 2.1100+ | Infrastructure deployment |
+| crane | 0.20+ | Push container images to ECR for Scenario 3 (alternative: Docker) |
 
 ### Install dependencies
 
 ```bash
 # Install CDK CLI
 npm install -g aws-cdk
+
+# Install crane (lightweight container image tool, needed for Scenario 3)
+brew install crane
 
 # If using nvm for Node.js
 nvm install 22
@@ -70,7 +74,7 @@ brew install python@3.11
 
 ### AWS Account Setup
 
-1. **AWS Credentials**: Configure credentials with permissions for CodeCommit, CodePipeline, CodeBuild, CodeDeploy, IAM, S3, CloudWatch, EC2, and Bedrock:
+1. **AWS Credentials**: Configure credentials with permissions for CodeCommit, CodePipeline, CodeBuild, CodeDeploy, IAM, S3, CloudWatch, EC2, ECS, ECR, and Bedrock:
    ```bash
    aws configure
    ```
@@ -137,7 +141,7 @@ This creates:
 - **Shared Stack**: S3 artifact bucket
 - **Scenario 1**: CodePipeline + CodeDeploy + EC2 instance (fails due to missing `appspec.yml`)
 - **Scenario 2**: CodePipeline with restricted IAM role (fails due to missing `codecommit:GitPull`)
-- **Scenario 3**: CodePipeline + CodeBuild LZA validator (fails due to OU name mismatch)
+- **Scenario 3**: CodePipeline + ECS Fargate service (fails due to container health check failure)
 
 ### 6. Push Seed Data to CodeCommit Repositories
 
@@ -187,34 +191,18 @@ aws codecommit put-file \
   --parent-commit-id "$COMMIT_ID" \
   --commit-message "Add buildspec" --name "Demo" --email "demo@example.com"
 
-# Scenario 3: LZA config with invalid OU
-aws codecommit put-file \
-  --repository-name codesuite-diag-scenario3-lza-config \
-  --branch-name main \
-  --file-content fileb://infrastructure/seed_data/scenario3/accounts-config.yaml \
-  --file-path accounts-config.yaml \
-  --commit-message "Initial commit" --name "Demo" --email "demo@example.com"
+# Scenario 3: Push a container image to ECR to trigger the ECS deployment pipeline
+# First, authenticate crane with ECR
+crane auth login $(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-east-1.amazonaws.com \
+  -u AWS -p $(aws ecr get-login-password --region us-east-1)
 
-COMMIT_ID=$(aws codecommit get-branch --repository-name codesuite-diag-scenario3-lza-config --branch-name main --query 'branch.commitId' --output text)
-aws codecommit put-file \
-  --repository-name codesuite-diag-scenario3-lza-config \
-  --branch-name main \
-  --file-content fileb://infrastructure/seed_data/scenario3/buildspec.yml \
-  --file-path buildspec.yml \
-  --parent-commit-id "$COMMIT_ID" \
-  --commit-message "Add buildspec" --name "Demo" --email "demo@example.com"
-
-COMMIT_ID=$(aws codecommit get-branch --repository-name codesuite-diag-scenario3-lza-config --branch-name main --query 'branch.commitId' --output text)
-aws codecommit put-file \
-  --repository-name codesuite-diag-scenario3-lza-config \
-  --branch-name main \
-  --file-content fileb://infrastructure/seed_data/scenario3/validate_ou_names.py \
-  --file-path validate_ou_names.py \
-  --parent-commit-id "$COMMIT_ID" \
-  --commit-message "Add validation script" --name "Demo" --email "demo@example.com"
+# Copy a public nginx image into the Scenario 3 ECR repo
+# (nginx listens on port 80, but the health check expects port 8080 — this causes the failure)
+crane copy public.ecr.aws/nginx/nginx:alpine-slim \
+  $(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-east-1.amazonaws.com/codesuite-diag-scenario3-api:latest
 ```
 
-Wait 1-2 minutes for the pipelines to trigger and fail, then verify:
+Wait 1-2 minutes for Scenario 1 and 2 pipelines to trigger and fail. Scenario 3 will take ~10 minutes as the ECS deployment times out due to the health check mismatch. Verify:
 
 ```bash
 aws codepipeline get-pipeline-state --name codesuite-diag-scenario1-pipeline \
@@ -224,7 +212,7 @@ aws codepipeline get-pipeline-state --name codesuite-diag-scenario3-pipeline \
   --query "stageStates[*].{stage:stageName,status:latestExecution.status}" --output table
 ```
 
-Expected: Source Succeeded, Deploy/Build Failed.
+Expected: Scenario 1 — Source Succeeded, Deploy Failed. Scenario 3 — Source/Build Succeeded, Deploy Failed.
 
 ## Running the Demo
 
@@ -287,11 +275,11 @@ aws bedrock list-inference-profiles --query "inferenceProfileSummaries[?contains
 - Failure: Source stage fails due to AccessDenied (missing `codecommit:GitPull`)
 - Agent investigates: gets pipeline state → reads error → inspects IAM role policies → identifies missing permission
 
-### Scenario 3: LZA Config OU Mismatch (Infrastructure Issue)
+### Scenario 3: ECS Deployment Failure (Infrastructure Issue)
 
 - Pipeline: `codesuite-diag-scenario3-pipeline`
-- Failure: Build stage fails because `accounts-config.yaml` references OU "Workloads-Production" (should be "Workloads-Prod")
-- Agent investigates: gets pipeline state → reads build logs → reads config file → identifies OU mismatch
+- Failure: Deploy stage fails because the ECS service container fails health checks (listens on port 80 but health check expects port 8080), causing the deployment to time out
+- Agent investigates: gets pipeline state → reads ECS deploy error → checks CloudWatch logs → identifies health check mismatch
 
 ## Verifying the Setup
 
@@ -310,6 +298,9 @@ curl -X POST http://localhost:8000/api/pipelines/codesuite-diag-scenario1-pipeli
 ## Running Tests
 
 ```bash
+# Install test dependencies (one-time)
+python3.11 -m pip install pytest pytest-asyncio
+
 # Unit tests (no AWS credentials needed)
 python3.11 -m pytest tests/test_codecommit_handlers.py tests/test_codepipeline_handlers.py -v
 
@@ -327,7 +318,7 @@ source .venv/bin/activate
 cdk destroy --all
 ```
 
-This removes all CodeCommit repos, pipelines, EC2 instances, IAM roles, S3 buckets, etc.
+This removes all CodeCommit repos, pipelines, EC2 instances, ECS clusters/services, ECR repos, VPCs, IAM roles, S3 buckets, etc.
 
 ## Troubleshooting
 
@@ -341,6 +332,8 @@ This removes all CodeCommit repos, pipelines, EC2 instances, IAM roles, S3 bucke
 | Frontend can't reach backend | Ensure backend runs on port 8000; frontend proxies to it |
 | Pipelines show "branch not found" | Push seed data first (see Step 6 above) |
 | `cdk deploy` hangs at VPC lookup | Ensure your AWS credentials are valid and region is correct |
+| Scenario 3 Source stage fails | The ECR repo is empty. Push an image with crane (see Step 6) |
+| `crane` not found | Install via `brew install crane` |
 
 ## License
 

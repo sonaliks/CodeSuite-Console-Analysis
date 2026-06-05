@@ -10,9 +10,9 @@ This document provides presenter talking points for each demo scenario, mapping 
 
 | Category | Description | Case Volume |
 |----------|-------------|-------------|
-| **Configuration Issues** | File naming inconsistencies, missing/misconfigured OU names in LZA config, YAML/JSON syntax errors, missing appspec or buildspec files | ~9,214 cases |
+| **Configuration Issues** | Missing/misconfigured deployment files (appspec, buildspec), YAML/JSON syntax errors, file naming inconsistencies | ~9,214 cases |
 | **Permission Issues** | Insufficient IAM role permissions preventing pipeline execution | ~12,397 cases |
-| **Infrastructure Issues** | LZA pipeline failures requiring manual stack investigation, pipeline source configuration mismatches | ~2,466 cases |
+| **Infrastructure Issues** | ECS/container deployment failures, service health check mismatches, deployment timeout issues | ~2,466 cases |
 
 ---
 
@@ -98,46 +98,45 @@ This scenario demonstrates the highest-volume issue category: IAM permission gap
 
 ---
 
-## Scenario 3: LZA Config OU Mismatch
+## Scenario 3: ECS Deployment Failure
 
 ### 2-Pager Category Mapping
 
 **Root Cause Category:** Infrastructure Issue
 
-**2-Pager Reference:** *"Infrastructure issues compound these problems with LZA pipeline failures requiring manual stack investigation..."* and *"...missing or misconfigured organizational unit names within LZA configuration files..."*
+**2-Pager Reference:** *"Infrastructure issues compound these problems with...pipeline failures requiring manual investigation..."*
 
-This scenario bridges two 2-pager categories — it's classified as an Infrastructure Issue (LZA pipeline failure) but the underlying cause is a configuration mismatch (misconfigured OU name). This demonstrates the agent's ability to perform deep investigation that crosses category boundaries.
+This scenario demonstrates an infrastructure issue where an ECS container deployment fails due to a health check misconfiguration. The container image starts successfully but cannot pass the required health check, causing the deployment to time out.
 
 ### What Happens
 
-- An LZA pipeline runs a validation step via CodeBuild that checks `accounts-config.yaml` against AWS Organizations
-- The config references OU name "Workloads-Production" but the actual OU is "Workloads-Prod"
-- The Build stage fails with a validation error logged to CloudWatch
+- A CodePipeline deploys a container image to an ECS Fargate service
+- The container starts (nginx on port 80) but the task definition's health check expects port 8080
+- The ECS deployment times out after 10 minutes as the service cannot stabilize
+- The Deploy stage fails
 
 ### What the Agent Does
 
-1. Retrieves pipeline state via the CodePipeline MCP Server → identifies the Build stage failed
-2. Gets action execution details → sees a CodeBuild failure
-3. Invokes the CloudWatch MCP Server → retrieves build logs showing the OU validation error
-4. Inspects `accounts-config.yaml` via the CodeCommit MCP Server → finds the "Workloads-Production" reference
-5. Cross-references against the actual organization structure → identifies "Workloads-Prod" as the correct name
-6. Produces a structured diagnosis classifying this as an "Infrastructure Issue"
+1. Retrieves pipeline state via the CodePipeline MCP Server → identifies the Deploy stage failed
+2. Gets action execution details → sees an ECS deployment timeout error
+3. Invokes the CloudWatch MCP Server → retrieves ECS service event logs showing health check failures
+4. Identifies the port mismatch between the container configuration and health check
+5. Produces a structured diagnosis classifying this as an "Infrastructure Issue"
 
 ### What the Audience Sees
 
 - The Analysis Panel displays:
   - **Category Badge:** "Infrastructure Issue"
-  - **Root Cause:** accounts-config.yaml references non-existent OU "Workloads-Production"
-  - **Affected Resource:** The accounts-config.yaml file path in the repository
-  - **Recommended Fix:** Change "Workloads-Production" to "Workloads-Prod", with valid OU names listed
+  - **Root Cause:** ECS deployment timed out due to container health check failure (port mismatch)
+  - **Affected Resource:** The ECS service ARN
+  - **Recommended Fix:** Update the task definition health check to target the correct port, or configure the container to listen on the expected port
 
 ### Presenter Talking Points
 
-- "LZA failures are particularly painful — they require manual stack investigation and deep organizational knowledge. This is exactly the kind of issue that eats up senior engineer time."
-- "Watch how the agent chains four different MCP servers together: CodePipeline for the failure, CloudWatch for the logs, CodeCommit for the config file, and organizational data for validation."
-- "The agent doesn't just say 'OU not found' — it tells you the exact correct value. It lists the valid OU names so the developer can pick the right one immediately."
-- "This scenario shows the agent handling a real-world LZA issue. In production, these mismatches can block entire account provisioning workflows for hours."
-- "Notice the sophistication: the agent read the build logs, identified the problematic file, read that file, and cross-referenced against the actual org structure. That's multi-step reasoning across multiple data sources."
+- "ECS deployment failures are common in containerized workflows — the container starts fine but the health check configuration doesn't match the application's actual behavior."
+- "The agent reads the deployment timeout error, then digs into the CloudWatch logs to understand why the service couldn't stabilize."
+- "This is a classic infrastructure issue: the deployment configuration is technically valid, but a mismatch between components causes a runtime failure that's hard to diagnose manually."
+- "Without this tool, a developer would need to: check the pipeline error, navigate to ECS, find the service events, read the task definition, compare ports, and realize the health check is misconfigured. That's 20+ minutes of investigation across multiple console pages."
 
 ---
 
@@ -161,7 +160,7 @@ This scenario bridges two 2-pager categories — it's classified as an Infrastru
 |-------|----------|----------|------------|------|
 | 1 | Missing appspec.yml | Configuration Issue | Simple | 2 min |
 | 2 | IAM Permission Gap | Permission Issue | Medium | 3 min |
-| 3 | LZA OU Mismatch | Infrastructure Issue | Complex | 4 min |
+| 3 | ECS Deployment Failure | Infrastructure Issue | Complex | 4 min |
 
 **Rationale:** Start simple to establish the pattern, then increase complexity to show the agent's reasoning depth. Each scenario introduces additional MCP servers, building the audience's understanding of the architecture.
 

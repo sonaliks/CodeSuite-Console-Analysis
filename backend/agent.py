@@ -135,32 +135,51 @@ class DiagnosticsAgent:
         text_lower = text.lower()
 
         # Try to parse as JSON first
+        json_str = ""
         try:
             # Look for JSON block in the response
             if "```json" in text:
                 json_str = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text and "{" in text:
+                # Sometimes model outputs ``` without json language marker
+                parts = text.split("```")
+                for part in parts[1:]:
+                    stripped = part.strip()
+                    if stripped.startswith("{"):
+                        json_str = stripped
+                        break
             elif "{" in text and "}" in text:
                 start = text.index("{")
                 end = text.rindex("}") + 1
                 json_str = text[start:end]
-            else:
-                json_str = ""
 
             if json_str:
                 data = json.loads(json_str)
                 category = data.get("root_cause_category", "")
-
                 cat = self._classify_category(category, text_lower)
 
                 return DiagnosisResponse(
                     root_cause_category=cat,
-                    root_cause_description=data.get("root_cause_description", text[:500]),
+                    root_cause_description=data.get("root_cause_description", "")[:2000],
                     affected_resource=data.get("affected_resource", "Unknown"),
-                    recommended_fix=data.get("recommended_fix", "See description"),
+                    recommended_fix=data.get("recommended_fix", "See description")[:3000],
                     evidence=evidence,
                 )
         except (json.JSONDecodeError, ValueError, IndexError):
-            pass
+            # JSON was malformed — try to repair truncated JSON
+            if json_str:
+                repaired = self._repair_truncated_json(json_str)
+                if repaired:
+                    cat = self._classify_category(
+                        repaired.get("root_cause_category", ""), text_lower
+                    )
+                    return DiagnosisResponse(
+                        root_cause_category=cat,
+                        root_cause_description=repaired.get("root_cause_description", "")[:2000],
+                        affected_resource=repaired.get("affected_resource", "Unknown"),
+                        recommended_fix=repaired.get("recommended_fix", "See description")[:3000],
+                        evidence=evidence,
+                    )
 
         # Fallback: extract structured fields from markdown response
         cat = self._classify_category("", text_lower)
@@ -216,6 +235,31 @@ class DiagnosticsAgent:
             recommended_fix=recommended_fix,
             evidence=evidence,
         )
+
+    def _repair_truncated_json(self, json_str: str) -> dict | None:
+        """Attempt to repair a truncated JSON response by extracting known fields."""
+        import re
+        result = {}
+
+        # Extract each known field using regex
+        field_patterns = {
+            "root_cause_category": r'"root_cause_category"\s*:\s*"([^"]*)"',
+            "root_cause_description": r'"root_cause_description"\s*:\s*"((?:[^"\\]|\\.)*)"',
+            "affected_resource": r'"affected_resource"\s*:\s*"((?:[^"\\]|\\.)*)"',
+            "recommended_fix": r'"recommended_fix"\s*:\s*"((?:[^"\\]|\\.)*)',
+        }
+
+        for field, pattern in field_patterns.items():
+            match = re.search(pattern, json_str, re.DOTALL)
+            if match:
+                value = match.group(1)
+                # Unescape JSON string escapes
+                value = value.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"')
+                result[field] = value
+
+        if result.get("root_cause_description"):
+            return result
+        return None
 
     def _classify_category(self, explicit_category: str, full_text_lower: str) -> RootCauseCategory:
         """Classify the root cause category from explicit label or text analysis."""
